@@ -31,13 +31,21 @@ class Value:
     def __str__(self):
         return self.eval_template.format(*(f'${reg}' for reg in self.regs))
 
+    def try_eval(self, consts: Dict[int, int]):
+        reg_values = []
+        for reg in self.regs:
+            if reg not in consts:
+                return None
+            reg_values.append(consts[reg])
+        return eval(self.eval_template.format(*reg_values))
+
 
 class EqualTest(Value):
     def __init__(self, reg: int, value: Value):
         regs = [*value.regs, reg]
         super(EqualTest, self).__init__(regs, f'{{{len(regs) - 1}}} == {value.eval_template}')
-        self.reg = reg
-        self.value = value
+        self.equal_reg = reg
+        self.equal_value = value
 
 
 class BasicBlock:
@@ -77,22 +85,20 @@ class BasicBlock:
             return self
         for instr in self.codes:
             if isinstance(instr, SetValue):
-                if all(reg in consts for reg in instr.value.regs):
-                    reg_values = [consts[reg] for reg in instr.value.regs]
-                    consts[instr.reg] = eval(instr.value.eval_template.format(*reg_values))
-        if all(reg in consts for reg in self.cond.regs):
-            reg_values = [consts[reg] for reg in self.cond.regs]
-            cond_value = cast(int, eval(self.cond.eval_template.format(*reg_values)))
+                reg_value = instr.value.try_eval(consts)
+                if reg_value is not None:
+                    consts[instr.reg] = reg_value
+        cond_value = self.cond.try_eval(consts)
+        if cond_value is not None:
             if cond_value == 0:
                 selected_block = self.no_block.eval_reduce(consts)
             else:
                 selected_block = self.yes_block.eval_reduce(consts)
             return BasicBlock(self.codes + selected_block.codes, selected_block.cond, selected_block.yes_block,
                               selected_block.no_block)
-        elif isinstance(self.cond, EqualTest) and all(reg in consts for reg in self.cond.value.regs):
-            reg_values = [consts[reg] for reg in self.cond.value.regs]
-            equal_value = cast(int, eval(self.cond.value.eval_template.format(*reg_values)))
-            yes_consts = {**consts, self.cond.reg: equal_value}
+        elif isinstance(self.cond, EqualTest):
+            equal_value = self.cond.equal_value.try_eval(consts)
+            yes_consts = {**consts, self.cond.equal_reg: equal_value}
             return BasicBlock(self.codes, self.cond, self.yes_block.eval_reduce(yes_consts),
                               self.no_block.eval_reduce(consts))
         else:
@@ -112,3 +118,6 @@ class BasicBlock:
         if self.cond is not None:
             yield from self.yes_block.recursive()
             yield from self.no_block.recursive()
+
+    def restrict(self) -> 'BasicBlock':
+        ...
