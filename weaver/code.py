@@ -32,6 +32,14 @@ class Value:
         return self.eval_template.format(*(f'${reg}' for reg in self.regs))
 
 
+class EqualTest(Value):
+    def __init__(self, reg: int, value: Value):
+        regs = [*value.regs, reg]
+        super(EqualTest, self).__init__(regs, f'{{{len(regs) - 1}}} == {value.eval_template}')
+        self.reg = reg
+        self.value = value
+
+
 class BasicBlock:
     count = 0
 
@@ -63,7 +71,7 @@ class BasicBlock:
             no_codes = if_instr.no + rest_codes
             return cls(block_codes, cond, cls.from_codes(yes_codes), cls.from_codes(no_codes))
 
-    def eval_reduce(self, consts: Dict[int, int] = None):
+    def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
         consts = cast(Dict[int, int], consts or {})
         if self.cond is None:
             return self
@@ -81,6 +89,12 @@ class BasicBlock:
                 selected_block = self.yes_block.eval_reduce(consts)
             return BasicBlock(self.codes + selected_block.codes, selected_block.cond, selected_block.yes_block,
                               selected_block.no_block)
+        elif isinstance(self.cond, EqualTest) and all(reg in consts for reg in self.cond.value.regs):
+            reg_values = [consts[reg] for reg in self.cond.value.regs]
+            equal_value = cast(int, eval(self.cond.value.eval_template.format(*reg_values)))
+            yes_consts = {**consts, self.cond.reg: equal_value}
+            return BasicBlock(self.codes, self.cond, self.yes_block.eval_reduce(yes_consts),
+                              self.no_block.eval_reduce(consts))
         else:
             return self
 
