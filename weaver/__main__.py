@@ -16,7 +16,7 @@ b1 = BasicBlock.from_codes([
 for block in b1.recursive():
     print(block)
     print()
-print('after')
-for block in b1.eval_reduce().recursive():
-    print(block)
-    print()
+# print('after')
+# for block in b1.eval_reduce().recursive():
+#     print(block)
+#     print()

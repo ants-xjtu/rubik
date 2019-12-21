@@ -1,4 +1,4 @@
-from typing import List, cast, Dict
+from typing import List, cast, Dict, Tuple, Set, Optional, Union
 
 
 class Instr:
@@ -51,9 +51,10 @@ class EqualTest(Value):
 class BasicBlock:
     count = 0
 
-    def __init__(self, codes: List[Instr] = None, cond: Value = None, yes_block: 'BasicBlock' = None,
+    def __init__(self, dep_graph: Dict[Union[Instr, Value], Set[Instr]] = None, cond: Value = None,
+                 yes_block: 'BasicBlock' = None,
                  no_block: 'BasicBlock' = None):
-        self.codes = codes or []
+        self.dep_graph = dep_graph or {}
         if cond is None:
             assert yes_block is None and no_block is None
         else:
@@ -70,14 +71,54 @@ class BasicBlock:
         first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, If)), len(codes))
         block_codes = codes[:first_if_index]
         if first_if_index == len(codes):
-            return cls(block_codes)
+            return BasicBlock(cls.build_dep_graph(block_codes))
         else:
             if_instr = cast(If, codes[first_if_index])
             cond = if_instr.cond
             rest_codes = codes[first_if_index + 1:]
             yes_codes = if_instr.yes + rest_codes
             no_codes = if_instr.no + rest_codes
-            return cls(block_codes, cond, cls.from_codes(yes_codes), cls.from_codes(no_codes))
+            return BasicBlock(cls.build_dep_graph(block_codes, cond), cond, cls.from_codes(yes_codes),
+                              cls.from_codes(no_codes))
+
+    @staticmethod
+    def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
+        # may be loosen if Command is added
+        assert all(isinstance(instr, SetValue) for instr in codes)
+        dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
+        # the instruction that processes the last writing to a register,
+        # and all instructions that read the register after the last writing
+        reg_graph: Dict[int, Tuple[Optional[Instr], List[Instr]]] = {}
+        for instr in cast(List[SetValue], codes):
+            write_reg = instr.reg
+            read_regs = instr.value.regs
+            dep_graph[instr] = set()
+            # the writing must be after all the readings which expect the old value
+            # the writing also must be after the previous writing to prevent to store wrong value eventually
+            if write_reg in reg_graph:
+                prev_write, all_read = reg_graph[write_reg]
+                if prev_write is not None:
+                    dep_graph[instr].add(prev_write)
+                dep_graph[instr].update(all_read)
+            # the reading must be after any writing
+            for read_reg in read_regs:
+                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
+                    dep_graph[instr].add(reg_graph[read_reg][0])
+
+            # update register graph with current instruction
+            # the writing clears all reading if exist
+            reg_graph[write_reg] = instr, []
+            # the readings are appended
+            for read_reg in read_regs:
+                if read_reg not in reg_graph:
+                    reg_graph[read_reg] = None, []
+                reg_graph[read_reg][1].append(instr)
+        if cond is not None:
+            dep_graph[cond] = set()
+            for read_reg in cond.regs:
+                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
+                    dep_graph[cond].add(reg_graph[read_reg][0])
+        return dep_graph
 
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
         consts = cast(Dict[int, int], consts or {})
@@ -106,9 +147,24 @@ class BasicBlock:
 
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
-        code_lines = [str(instr) for instr in self.codes]
+        reverse_index = {instr: i for i, instr in enumerate(self.dep_graph) if isinstance(instr, Instr)}
+        code_lines = []
+        cond_dep_part = None
+        for instr in self.dep_graph:
+            if self.dep_graph[instr] != set():
+                dep_part = f'(after ' + ', '.join(
+                    f'I{reverse_index[dep_instr]}' for dep_instr in self.dep_graph[instr]) + ') '
+            else:
+                dep_part = ''
+            if isinstance(instr, Instr):
+                code_line = f'I{reverse_index[instr]}: {dep_part}{instr}'
+                code_lines.append(code_line)
+            else:
+                cond_dep_part = dep_part
         if self.cond is not None:
-            code_lines.append(f'If {self.cond} Goto L{self.yes_block.block_id} Else Goto L{self.no_block.block_id}')
+            assert cond_dep_part is not None
+            code_lines.append(
+                f'{cond_dep_part}If {self.cond} Goto L{self.yes_block.block_id} Else Goto L{self.no_block.block_id}')
         if not code_lines:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
@@ -119,5 +175,5 @@ class BasicBlock:
             yield from self.yes_block.recursive()
             yield from self.no_block.recursive()
 
-    def restrict(self) -> 'BasicBlock':
+    def relocate_cond(self) -> 'BasicBlock':
         ...
