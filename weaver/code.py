@@ -26,6 +26,21 @@ class SetValue(Instr):
         return env
 
 
+class Command(SetValue):
+    def __init__(self, provider: int, name: str, args: List['Value']):
+        super(Command, self).__init__(provider, AggValue(args, '<should not evaluate>'))
+        self.provider = provider
+        self.name = name
+        self.args = args
+
+    def __str__(self):
+        args_str = ', '.format(*(str(arg) for arg in self.args))
+        return f'${self.provider}->{self.name}({args_str})'
+
+    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+        return env
+
+
 class If(Instr):
     def __init__(self, cond: 'Value', yes: List[Instr], no: List[Instr] = None):
         self.cond = cond
@@ -189,16 +204,16 @@ class BasicBlock:
                 selected_block = self.yes_block.eval_reduce(consts)
             return BasicBlock(self.codes + selected_block.codes, selected_block.cond, selected_block.yes_block,
                               selected_block.no_block)
-        elif isinstance(self.cond, EqualTest):
-            equal_value = self.cond.equal_value.try_eval(consts)
-            yes_consts = {**consts, self.cond.equal_reg: equal_value}
-            yes_block = self.yes_block.eval_reduce(yes_consts)
-            if yes_block is self.yes_block:
-                return self
-            return BasicBlock(self.codes, self.cond, yes_block,
-                              self.no_block.eval_reduce(consts))
         else:
-            return self
+            yes_consts = dict(consts)
+            if isinstance(self.cond, EqualTest):
+                equal_value = self.cond.equal_value.try_eval(consts)
+                yes_consts[self.cond.equal_reg] = equal_value
+            yes_block = self.yes_block.eval_reduce(yes_consts)
+            no_block = self.no_block.eval_reduce(consts)
+            if yes_block is self.yes_block and no_block is self.no_block:
+                return self
+            return BasicBlock(self.codes, self.cond, yes_block, no_block)
 
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
