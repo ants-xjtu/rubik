@@ -6,6 +6,9 @@ class Instr:
         self.read_regs = read_regs
         self.write_regs = write_regs
 
+    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+        raise NotImplementedError()
+
 
 class SetValue(Instr):
     def __init__(self, reg: int, value: 'Value'):
@@ -15,6 +18,12 @@ class SetValue(Instr):
 
     def __str__(self):
         return f'${self.reg} = {self.value}'
+
+    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+        reg_value = self.value.try_eval(env)
+        if reg_value is not None:
+            env[self.reg] = reg_value
+        return env
 
 
 class If(Instr):
@@ -30,6 +39,27 @@ class If(Instr):
             write_regs.update(instr.write_regs)
         super(If, self).__init__(list(read_regs), list(write_regs))
 
+    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+        cond_value = self.cond.try_eval(env)
+        if cond_value is not None:
+            if cond_value == 0:
+                for instr in self.no:
+                    env = instr.affect(env)
+            else:
+                for instr in self.yes:
+                    env = instr.affect(env)
+            return env
+
+        yes_env = dict(env)
+        if isinstance(self.cond, EqualTest):
+            yes_env[self.cond.equal_reg] = self.cond.equal_value
+        for instr in self.yes:
+            yes_env = instr.affect(yes_env)
+        no_env = dict(env)
+        for instr in self.no:
+            no_env = instr.affect(no_env)
+        return {reg: yes_env[reg] for reg in yes_env.keys() & no_env.keys()}
+
 
 class Value:
     def __init__(self, regs: List[int], eval_template: str):
@@ -39,7 +69,7 @@ class Value:
     def __str__(self):
         return self.eval_template.format(*(f'${reg}' for reg in self.regs))
 
-    def try_eval(self, consts: Dict[int, int]):
+    def try_eval(self, consts: Dict[int, int]) -> Optional[int]:
         reg_values = []
         for reg in self.regs:
             if reg not in consts:
@@ -59,10 +89,10 @@ class EqualTest(Value):
 class BasicBlock:
     count = 0
 
-    def __init__(self, dep_graph: Dict[Union[Instr, Value], Set[Instr]] = None, cond: Value = None,
+    def __init__(self, codes: List[Instr] = None, cond: Value = None,
                  yes_block: 'BasicBlock' = None,
                  no_block: 'BasicBlock' = None):
-        self.dep_graph = dep_graph or {}
+        self.codes = codes or []
         if cond is None:
             assert yes_block is None and no_block is None
         else:
@@ -79,14 +109,14 @@ class BasicBlock:
         first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, If)), len(codes))
         block_codes = codes[:first_if_index]
         if first_if_index == len(codes):
-            return BasicBlock(BasicBlock.build_dep_graph(block_codes))
+            return BasicBlock(block_codes)
         else:
             if_instr = cast(If, codes[first_if_index])
             cond = if_instr.cond
             rest_codes = codes[first_if_index + 1:]
             yes_codes = if_instr.yes + rest_codes
             no_codes = if_instr.no + rest_codes
-            return BasicBlock(BasicBlock.build_dep_graph(block_codes, cond), cond, BasicBlock.from_codes(yes_codes),
+            return BasicBlock(block_codes, cond, BasicBlock.from_codes(yes_codes),
                               BasicBlock.from_codes(no_codes))
 
     @staticmethod
@@ -132,10 +162,7 @@ class BasicBlock:
         if self.cond is None:
             return self
         for instr in self.codes:
-            if isinstance(instr, SetValue):
-                reg_value = instr.value.try_eval(consts)
-                if reg_value is not None:
-                    consts[instr.reg] = reg_value
+            consts = instr.affect(consts)
         cond_value = self.cond.try_eval(consts)
         if cond_value is not None:
             if cond_value == 0:
@@ -151,27 +178,12 @@ class BasicBlock:
                               self.no_block.eval_reduce(consts))
         else:
             return self
- 
+
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
-        reverse_index = {instr: i for i, instr in enumerate(self.dep_graph) if isinstance(instr, Instr)}
-        code_lines = []
-        cond_dep_part = None
-        for instr in self.dep_graph:
-            if self.dep_graph[instr] != set():
-                dep_part = f'(after ' + ', '.join(
-                    f'I{reverse_index[dep_instr]}' for dep_instr in self.dep_graph[instr]) + ') '
-            else:
-                dep_part = ''
-            if isinstance(instr, Instr):
-                code_line = f'I{reverse_index[instr]}: {dep_part}{instr}'
-                code_lines.append(code_line)
-            else:
-                cond_dep_part = dep_part
+        code_lines = [str(instr) for instr in self.codes]
         if self.cond is not None:
-            assert cond_dep_part is not None
-            code_lines.append(
-                f'{cond_dep_part}If {self.cond} Goto L{self.yes_block.block_id} Else Goto L{self.no_block.block_id}')
+            code_lines.append(f'If {self.cond} Goto L{self.yes_block.block_id} Else Goto L{self.no_block.block_id}')
         if not code_lines:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
