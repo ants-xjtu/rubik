@@ -2,12 +2,14 @@ from typing import List, cast, Dict, Tuple, Set, Optional, Union
 
 
 class Instr:
-    pass
+    def __init__(self, read_regs: List[int], write_regs: List[int]):
+        self.read_regs = read_regs
+        self.write_regs = write_regs
 
 
 class SetValue(Instr):
     def __init__(self, reg: int, value: 'Value'):
-        super(SetValue, self).__init__()
+        super(SetValue, self).__init__(value.regs, [reg])
         self.reg = reg
         self.value = value
 
@@ -17,10 +19,16 @@ class SetValue(Instr):
 
 class If(Instr):
     def __init__(self, cond: 'Value', yes: List[Instr], no: List[Instr] = None):
-        super(If, self).__init__()
         self.cond = cond
         self.yes = yes
         self.no = no or []
+
+        read_regs = set(cond.regs)
+        write_regs = set()
+        for instr in self.yes + self.no:
+            read_regs.update(instr.read_regs)
+            write_regs.update(instr.write_regs)
+        super(If, self).__init__(list(read_regs), list(write_regs))
 
 
 class Value:
@@ -65,54 +73,53 @@ class BasicBlock:
         self.block_id = BasicBlock.count
         BasicBlock.count += 1
 
-    @classmethod
-    def from_codes(cls, codes: List[Instr]) -> 'BasicBlock':
+    @staticmethod
+    def from_codes(codes: List[Instr]) -> 'BasicBlock':
         # https://stackoverflow.com/a/8534381
         first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, If)), len(codes))
         block_codes = codes[:first_if_index]
         if first_if_index == len(codes):
-            return BasicBlock(cls.build_dep_graph(block_codes))
+            return BasicBlock(BasicBlock.build_dep_graph(block_codes))
         else:
             if_instr = cast(If, codes[first_if_index])
             cond = if_instr.cond
             rest_codes = codes[first_if_index + 1:]
             yes_codes = if_instr.yes + rest_codes
             no_codes = if_instr.no + rest_codes
-            return BasicBlock(cls.build_dep_graph(block_codes, cond), cond, cls.from_codes(yes_codes),
-                              cls.from_codes(no_codes))
+            return BasicBlock(BasicBlock.build_dep_graph(block_codes, cond), cond, BasicBlock.from_codes(yes_codes),
+                              BasicBlock.from_codes(no_codes))
 
     @staticmethod
     def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
-        # may be loosen if Command is added
-        assert all(isinstance(instr, SetValue) for instr in codes)
         dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
         # the instruction that processes the last writing to a register,
         # and all instructions that read the register after the last writing
         reg_graph: Dict[int, Tuple[Optional[Instr], List[Instr]]] = {}
         for instr in cast(List[SetValue], codes):
-            write_reg = instr.reg
-            read_regs = instr.value.regs
             dep_graph[instr] = set()
-            # the writing must be after all the readings which expect the old value
-            # the writing also must be after the previous writing to prevent to store wrong value eventually
-            if write_reg in reg_graph:
-                prev_write, all_read = reg_graph[write_reg]
-                if prev_write is not None:
-                    dep_graph[instr].add(prev_write)
-                dep_graph[instr].update(all_read)
+            for write_reg in instr.write_regs:
+                # the writing must be after all the readings which expect the old value
+                # the writing also must be after the previous writing to prevent to store wrong value eventually
+                if write_reg in reg_graph:
+                    prev_write, all_read = reg_graph[write_reg]
+                    if prev_write is not None:
+                        dep_graph[instr].add(prev_write)
+                    dep_graph[instr].update(all_read)
             # the reading must be after any writing
-            for read_reg in read_regs:
+            for read_reg in instr.read_regs:
                 if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
                     dep_graph[instr].add(reg_graph[read_reg][0])
 
             # update register graph with current instruction
-            # the writing clears all reading if exist
-            reg_graph[write_reg] = instr, []
+            for write_reg in instr.write_regs:
+                # the writing clears all reading if exist
+                reg_graph[write_reg] = instr, []
             # the readings are appended
-            for read_reg in read_regs:
+            for read_reg in instr.read_regs:
                 if read_reg not in reg_graph:
                     reg_graph[read_reg] = None, []
                 reg_graph[read_reg][1].append(instr)
+
         if cond is not None:
             dep_graph[cond] = set()
             for read_reg in cond.regs:
@@ -144,7 +151,7 @@ class BasicBlock:
                               self.no_block.eval_reduce(consts))
         else:
             return self
-
+ 
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
         reverse_index = {instr: i for i, instr in enumerate(self.dep_graph) if isinstance(instr, Instr)}
