@@ -16,11 +16,14 @@ b1 = BasicBlock.from_codes([
 for block in b1.recursive():
     print(block)
     print()
-print('after relocate')
-for block in b1.relocate_cond().recursive():
-    print(block)
-    print()
-print('after evaluate')
-for block in b1.relocate_cond().eval_reduce().recursive():
+
+print('after')
+while True:
+    b2 = b1.relocate_cond().eval_reduce()
+    if b2 is b1:
+        break
+    b1 = b2
+b1 = b2
+for block in b1.recursive():
     print(block)
     print()

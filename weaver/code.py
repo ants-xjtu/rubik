@@ -62,7 +62,7 @@ class If(Instr):
 
 
 class Value:
-    def __init__(self, regs: List[int], eval_template: str):
+    def __init__(self, regs: List[int], eval_template: str = '<should not evaluate>'):
         self.regs = regs
         self.eval_template = eval_template
 
@@ -78,10 +78,28 @@ class Value:
         return eval(self.eval_template.format(*reg_values))
 
 
-class EqualTest(Value):
+class AggValue(Value):
+    def __init__(self, values: List[Value], agg_template: str):
+        super().__init__(list(set(sum((value.regs for value in values), []))))
+        self.values = values
+        self.agg_eval = agg_template
+
+    def __str__(self):
+        return self.agg_eval.format(*(str(value) for value in self.values))
+
+    def try_eval(self, consts: Dict[int, int]) -> Optional[int]:
+        evaluated = []
+        for value in self.values:
+            result = value.try_eval(consts)
+            if result is None:
+                return None
+            evaluated.append(result)
+        return eval(self.agg_eval.format(*evaluated))
+
+
+class EqualTest(AggValue):
     def __init__(self, reg: int, value: Value):
-        regs = [*value.regs, reg]
-        super(EqualTest, self).__init__(regs, f'{{{len(regs) - 1}}} == {value.eval_template}')
+        super().__init__([Value([reg], '{0}'), value], '{0} == {1}')
         self.equal_reg = reg
         self.equal_value = value
 
