@@ -1,4 +1,4 @@
-from typing import List, cast, Dict, Tuple, Set, Optional, Union
+from typing import List, cast, Dict, Tuple, Set, Optional, Union, Generator
 
 
 class Instr:
@@ -174,7 +174,10 @@ class BasicBlock:
         elif isinstance(self.cond, EqualTest):
             equal_value = self.cond.equal_value.try_eval(consts)
             yes_consts = {**consts, self.cond.equal_reg: equal_value}
-            return BasicBlock(self.codes, self.cond, self.yes_block.eval_reduce(yes_consts),
+            yes_block = self.yes_block.eval_reduce(yes_consts)
+            if yes_block is self.yes_block:
+                return self
+            return BasicBlock(self.codes, self.cond, yes_block,
                               self.no_block.eval_reduce(consts))
         else:
             return self
@@ -188,11 +191,30 @@ class BasicBlock:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
 
-    def recursive(self):
+    def recursive(self) -> Generator['BasicBlock', None, None]:
         yield self
         if self.cond is not None:
             yield from self.yes_block.recursive()
             yield from self.no_block.recursive()
 
     def relocate_cond(self) -> 'BasicBlock':
-        ...
+        if self.cond is None:
+            return self
+        dep_graph = self.build_dep_graph(self.codes, self.cond)
+        fixed = {instr: False for instr in self.codes}
+        fix_stack = list(dep_graph[self.cond])
+        while fix_stack:
+            instr = fix_stack.pop()
+            if not fixed[instr]:
+                fixed[instr] = True
+                fix_stack.extend(dep_graph[instr])
+
+        fixed_codes = [instr for instr in self.codes if fixed[instr]]
+        shifted_codes = [instr for instr in self.codes if not fixed[instr]]
+        if not shifted_codes:
+            return self
+        return BasicBlock(fixed_codes, self.cond, BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
+                                                             self.yes_block.yes_block,
+                                                             self.yes_block.no_block).relocate_cond(),
+                          BasicBlock(shifted_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
+                                     self.no_block.no_block).relocate_cond())
