@@ -1,4 +1,4 @@
-from typing import List, cast, Dict, Tuple, Set, Optional, Union, Generator
+from typing import List, cast, Dict, Tuple, Optional, Generator
 
 
 class Instr:
@@ -194,50 +194,6 @@ class BasicBlock:
             return BasicBlock(block_codes, cond, BasicBlock.recursive_build(yes_codes),
                               BasicBlock.recursive_build(no_codes))
 
-    @staticmethod
-    def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
-        dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
-        # all instructions that (possibly) processes the last writing to a register,
-        # and all instructions that read the register after the last writing
-        reg_graph: Dict[int, Tuple[List[Instr], List[Instr]]] = {}
-        for instr in cast(List[SetValue], codes):
-            dep_graph[instr] = set()
-            for write_reg in instr.write_regs:
-                # the writing must be after all the readings which expect the old value
-                # the writing also must be after the previous writing to prevent to store wrong value eventually
-                if write_reg in reg_graph:
-                    all_write, all_read = reg_graph[write_reg]
-                    dep_graph[instr].update(all_write)
-                    dep_graph[instr].update(all_read)
-            # the reading must be after any writing
-            for read_reg in instr.read_regs:
-                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
-                    dep_graph[instr].update(reg_graph[read_reg][0])
-
-            # update register graph with current instruction
-            for write_reg in instr.write_regs:
-                if isinstance(instr, If):
-                    # if the writing happens, the instruction becomes the one performs the last writing
-                    # otherwise `write_reg` is untouched
-                    if write_reg not in reg_graph:
-                        reg_graph[write_reg] = [], []
-                    reg_graph[write_reg][0].append(instr)
-                else:
-                    # the writing clears all reading if exist
-                    reg_graph[write_reg] = [instr], []
-            # the readings are appended
-            for read_reg in instr.read_regs:
-                if read_reg not in reg_graph:
-                    reg_graph[read_reg] = [], []
-                reg_graph[read_reg][1].append(instr)
-
-        if cond is not None:
-            dep_graph[cond] = set()
-            for read_reg in cond.regs:
-                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
-                    dep_graph[cond].update(reg_graph[read_reg][0])
-        return dep_graph
-
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
         consts = cast(Dict[int, int], consts or {})
         if self.cond is None:
@@ -278,20 +234,29 @@ class BasicBlock:
             yield from self.yes_block.recursive()
             yield from self.no_block.recursive()
 
+    def build_fixed(self) -> List[bool]:
+        fixed = [False] * len(self.codes)
+        if self.cond is None:
+            return fixed
+        read_regs = set(self.cond.regs)
+        for i_1 in range(len(self.codes), 0, -1):
+            i = i_1 - 1
+            instr = self.codes[i]
+            if set(instr.write_regs) & read_regs:
+                fixed[i] = True
+                read_regs.update(instr.read_regs)
+                if isinstance(instr, SetValue):
+                    for write_reg in instr.write_regs:
+                        read_regs.discard(write_reg)
+        return fixed
+
     def relocate_cond(self) -> 'BasicBlock':
         if self.cond is None:
             return self
-        dep_graph = self.build_dep_graph(self.codes, self.cond)
-        fixed = {instr: False for instr in self.codes}
-        fix_stack = list(dep_graph[self.cond])
-        while fix_stack:
-            instr = fix_stack.pop()
-            if not fixed[instr]:
-                fixed[instr] = True
-                fix_stack.extend(dep_graph[instr])
 
-        fixed_codes = [instr for instr in self.codes if fixed[instr]]
-        shifted_codes = [instr for instr in self.codes if not fixed[instr]]
+        fixed = self.build_fixed()
+        fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
+        shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
         for i, instr in enumerate(fixed_codes):
             if isinstance(instr, If) and set(self.cond.regs) & set(instr.write_regs):
                 # condition is blocked by (at least) one If
