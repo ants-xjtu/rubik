@@ -31,13 +31,14 @@ ip = [
         SetValue(psm_state, Value([instance_table], 'inst->state')),
         SetValue(1003, Value([instance_table], 'inst->seen_dont_frag')),
     ], [
-           Command(instance_table, 'Create', [saddr, daddr]),
+           Command(instance_table, 'Create', [saddr, daddr], opt_target=True),
            SetValue(psm_state, DUMP),
            SetValue(1003, no),
        ]),
     Command(sequence, 'InsertMeta',
-            [Value([header_parser], 'header->offset'), Value([header_parser], 'header_meta->payload_length')]),
-    Command(sequence, 'InsertData', [Value([header_parser], 'header_meta->payload')]),
+            [Value([header_parser], 'header->offset'), Value([header_parser], 'header_meta->payload_length')],
+            opt_target=True),
+    Command(sequence, 'InsertData', [Value([header_parser], 'header_meta->payload')], opt_target=True),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, DUMP), [
@@ -75,14 +76,14 @@ ip = [
         ]),
     ]),
     If(EqualTest(psm_state, DUMP), [
-        Command(sequence, 'Assemble', []),
+        Command(sequence, 'Assemble', [], opt_target=True),
     ]),
     Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')]),
     Command(instance_table, 'Set{seen_dont_frag}', [Value([1003], '{0}')]),
     If(EqualTest(psm_state, DUMP), [
         If(AggValue([Value([header_parser], 'header->protocol'), Value([], '42')], '{0} == {1}'), [
-            Command(0, 'Next', []),
-            Command(instance_table, 'Destroy', []),
+            Command(0, 'Next', [], opt_target=True),
+            Command(instance_table, 'Destroy', [], opt_target=True),
         ])
     ])
 ]
@@ -158,7 +159,7 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
 
 
 tcp = [
-    If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({0}, {1}, {2}, {3})'), [
+    If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
         SetValue(psm_state, Value([instance_table], 'inst->state')),
         SetValue(reg_fin_seq_1, Value([instance_table], 'inst->reg_fin_seq_1')),
@@ -175,6 +176,7 @@ tcp = [
         SetValue(reg_wv2_fast_expr, Value([instance_table], 'inst->reg_wv2_fast_expr')),
         SetValue(reg_wv4_expr, Value([instance_table], 'inst->reg_wv4_expr')),
     ], [
+           Command(instance_table, 'Create', [saddr, sport, daddr, dport], opt_target=True),
            SetValue(psm_state, CLOSED),
            SetValue(reg_fin_seq_1, no),
            SetValue(reg_fin_seq_2, no),
@@ -208,8 +210,9 @@ tcp = [
        update_window(reg_active_lwnd, reg_active_wscale, reg_active_wsize, reg_passive_lwnd, reg_passive_wscale,
                      reg_passive_wsize)),
     Command(sequence, 'InsertMeta',
-            [value_seq_num, Value([reg_data_len], '{0}'), Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')]),
-    Command(sequence, 'InsertData', [Value([reg_data], '{0}')]),
+            [value_seq_num, Value([reg_data_len], '{0}'), Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')],
+            opt_target=True),
+    Command(sequence, 'InsertData', [Value([reg_data], '{0}')], opt_target=True),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, CLOSED), [
@@ -271,56 +274,59 @@ tcp = [
             SetValue(psm_triggered, yes),
         ]),
     ]),
-    If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, FIN_WAIT), [
-            If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
-                        '{0} && {1} == 0 && {2} + 1 == {3}'), [
-                   SetValue(reg_wv2_expr, yes),
-               ]),
-            If(EqualTest(reg_wv2_expr, yes), [
-                If(ready, [
-                    SetValue(psm_trans, trans_wv2),
-                    SetValue(psm_state, CLOSE_WAIT),
-                    SetValue(psm_triggered, yes),
-                ]),
-            ]),
-            If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
-                        '{0} && {1} && {2} + 1 == {3}'), [
-                   SetValue(reg_wv2_fast_expr, yes),
-               ]),
-            If(EqualTest(reg_wv2_fast_expr, yes), [
-                If(ready, [
-                    SetValue(psm_trans, trans_wv2_fast),
-                    SetValue(psm_state, LAST_ACK),
-                    SetValue(psm_triggered, yes),
-                ]),
-            ]),
-            SetValue(psm_triggered, yes),
-        ]),
-    ]),
-    If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, CLOSE_WAIT), [
-            If(value_fin, [
-                SetValue(psm_trans, trans_wv3),
-                SetValue(psm_state, LAST_ACK),
-                SetValue(psm_triggered, yes),
-            ]),
-            SetValue(psm_triggered, yes),
-        ]),
-    ]),
-    If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, LAST_ACK), [
-            If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} && {1} + 1 == {2}'), [
-                SetValue(reg_wv4_expr, yes),
-            ]),
-            If(EqualTest(reg_wv4_expr, yes), [
-                If(ready, [
-                    SetValue(psm_trans, trans_wv4),
-                    SetValue(psm_state, TERMINATE),
-                    SetValue(psm_triggered, yes),
-                ]),
-            ]),
-            SetValue(psm_triggered, yes),
-        ]),
+    # If(EqualTest(psm_triggered, no), [
+    #     If(EqualTest(psm_state, FIN_WAIT), [
+    #         If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
+    #                     '{0} && {1} == 0 && {2} + 1 == {3}'), [
+    #                SetValue(reg_wv2_expr, yes),
+    #            ]),
+    #         If(EqualTest(reg_wv2_expr, yes), [
+    #             If(ready, [
+    #                 SetValue(psm_trans, trans_wv2),
+    #                 SetValue(psm_state, CLOSE_WAIT),
+    #                 SetValue(psm_triggered, yes),
+    #             ]),
+    #         ]),
+    #         If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
+    #                     '{0} && {1} && {2} + 1 == {3}'), [
+    #                SetValue(reg_wv2_fast_expr, yes),
+    #            ]),
+    #         If(EqualTest(reg_wv2_fast_expr, yes), [
+    #             If(ready, [
+    #                 SetValue(psm_trans, trans_wv2_fast),
+    #                 SetValue(psm_state, LAST_ACK),
+    #                 SetValue(psm_triggered, yes),
+    #             ]),
+    #         ]),
+    #         SetValue(psm_triggered, yes),
+    #     ]),
+    # ]),
+    # If(EqualTest(psm_triggered, no), [
+    #     If(EqualTest(psm_state, CLOSE_WAIT), [
+    #         If(value_fin, [
+    #             SetValue(psm_trans, trans_wv3),
+    #             SetValue(psm_state, LAST_ACK),
+    #             SetValue(psm_triggered, yes),
+    #         ]),
+    #         SetValue(psm_triggered, yes),
+    #     ]),
+    # ]),
+    # If(EqualTest(psm_triggered, no), [
+    #     If(EqualTest(psm_state, LAST_ACK), [
+    #         If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} && {1} + 1 == {2}'), [
+    #             SetValue(reg_wv4_expr, yes),
+    #         ]),
+    #         If(EqualTest(reg_wv4_expr, yes), [
+    #             If(ready, [
+    #                 SetValue(psm_trans, trans_wv4),
+    #                 SetValue(psm_state, TERMINATE),
+    #                 SetValue(psm_triggered, yes),
+    #             ]),
+    #         ]),
+    #         SetValue(psm_triggered, yes),
+    #     ]),
+    # ]),
+    If(EqualTest(psm_trans, trans_buffering), [
+        Command(sequence, 'Assemble', [], opt_target=True),
     ]),
 ]

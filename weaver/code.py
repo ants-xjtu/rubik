@@ -76,21 +76,22 @@ class If(Instr):
             no_env = instr.affect(no_env)
         return {reg: yes_env[reg] for reg in yes_env.keys() & no_env.keys()}
 
-    def make_block(self, prev: List[Instr], after: List[Instr]) -> 'BasicBlock':
-        choice = False
-        for instr in self.yes + self.no:
-            if isinstance(instr, Command) and instr.opt_target:
-                choice = True
-        if choice:
-            return BasicBlock(prev, self.cond, BasicBlock.from_codes(self.yes + after),
-                              BasicBlock.from_codes(self.no + after))
-        else:
-            after_block = BasicBlock.from_codes(after)
-            return BasicBlock(prev + [self] + after_block.codes, after_block.cond, after_block.yes_block,
-                              after_block.no_block)
-
     def __str__(self):
         return f'If {self.cond} Do /* {len(self.yes)} code(s) */ Else /* {len(self.no)} code(s) */'
+
+
+class Choice(If):
+    def __init__(self, cond: 'Value', yes: List[Instr], no: List[Instr]):
+        super().__init__(cond, yes, no)
+
+    def __str__(self):
+        yes_str = '\n'.join(str(instr) for instr in self.yes)
+        no_str = '\n'.join(str(instr) for instr in self.no)
+        if yes_str:
+            yes_str = '\n' + yes_str.replace('\n', '\n  ') + '\n'
+        if no_str:
+            no_str = '\n' + no_str.replace('\n', '\n  ') + '\n'
+        return f'Choice {self.cond} {{{yes_str}}} Else {{{no_str}}}'
 
 
 class Value:
@@ -154,58 +155,87 @@ class BasicBlock:
         BasicBlock.count += 1
 
     @staticmethod
+    def scan_codes(codes: List[Instr]) -> Tuple[List[Instr], bool]:
+        choice = False
+        scanned = []
+        for instr in codes:
+            if isinstance(instr, Command) and instr.opt_target:
+                choice = True
+            if isinstance(instr, If):
+                scanned_yes, choice_yes = BasicBlock.scan_codes(instr.yes)
+                scanned_no, choice_no = BasicBlock.scan_codes(instr.no)
+                if choice_yes or choice_no:
+                    choice = True
+                    scanned.append(Choice(instr.cond, scanned_yes, scanned_no))
+                else:
+                    scanned.append(instr)
+            else:
+                scanned.append(instr)
+        return scanned, choice
+
+    @staticmethod
     def from_codes(codes: List[Instr]) -> 'BasicBlock':
+        scanned, _ = BasicBlock.scan_codes(codes)
+        return BasicBlock.recursive_build(scanned)
+
+    @staticmethod
+    def recursive_build(codes: List[Instr]) -> 'BasicBlock':
         # https://stackoverflow.com/a/8534381
-        first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, If)), len(codes))
+        first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, Choice)), len(codes))
         block_codes = codes[:first_if_index]
         if first_if_index == len(codes):
             return BasicBlock(block_codes)
         else:
             if_instr = cast(If, codes[first_if_index])
-            # cond = if_instr.cond
+            cond = if_instr.cond
             rest_codes = codes[first_if_index + 1:]
-            # yes_codes = if_instr.yes + rest_codes
-            # no_codes = if_instr.no + rest_codes
-            # return BasicBlock(block_codes, cond, BasicBlock.from_codes(yes_codes),
-            #                   BasicBlock.from_codes(no_codes))
-            return if_instr.make_block(block_codes, rest_codes)
+            yes_codes = if_instr.yes + rest_codes
+            no_codes = if_instr.no + rest_codes
+            return BasicBlock(block_codes, cond, BasicBlock.recursive_build(yes_codes),
+                              BasicBlock.recursive_build(no_codes))
 
     @staticmethod
     def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
         dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
-        # the instruction that processes the last writing to a register,
+        # all instructions that (possibly) processes the last writing to a register,
         # and all instructions that read the register after the last writing
-        reg_graph: Dict[int, Tuple[Optional[Instr], List[Instr]]] = {}
+        reg_graph: Dict[int, Tuple[List[Instr], List[Instr]]] = {}
         for instr in cast(List[SetValue], codes):
             dep_graph[instr] = set()
             for write_reg in instr.write_regs:
                 # the writing must be after all the readings which expect the old value
                 # the writing also must be after the previous writing to prevent to store wrong value eventually
                 if write_reg in reg_graph:
-                    prev_write, all_read = reg_graph[write_reg]
-                    if prev_write is not None:
-                        dep_graph[instr].add(prev_write)
+                    all_write, all_read = reg_graph[write_reg]
+                    dep_graph[instr].update(all_write)
                     dep_graph[instr].update(all_read)
             # the reading must be after any writing
             for read_reg in instr.read_regs:
                 if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
-                    dep_graph[instr].add(reg_graph[read_reg][0])
+                    dep_graph[instr].update(reg_graph[read_reg][0])
 
             # update register graph with current instruction
             for write_reg in instr.write_regs:
-                # the writing clears all reading if exist
-                reg_graph[write_reg] = instr, []
+                if isinstance(instr, If):
+                    # if the writing happens, the instruction becomes the one performs the last writing
+                    # otherwise `write_reg` is untouched
+                    if write_reg not in reg_graph:
+                        reg_graph[write_reg] = [], []
+                    reg_graph[write_reg][0].append(instr)
+                else:
+                    # the writing clears all reading if exist
+                    reg_graph[write_reg] = [instr], []
             # the readings are appended
             for read_reg in instr.read_regs:
                 if read_reg not in reg_graph:
-                    reg_graph[read_reg] = None, []
+                    reg_graph[read_reg] = [], []
                 reg_graph[read_reg][1].append(instr)
 
         if cond is not None:
             dep_graph[cond] = set()
             for read_reg in cond.regs:
                 if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
-                    dep_graph[cond].add(reg_graph[read_reg][0])
+                    dep_graph[cond].update(reg_graph[read_reg][0])
         return dep_graph
 
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
@@ -263,18 +293,16 @@ class BasicBlock:
         fixed_codes = [instr for instr in self.codes if fixed[instr]]
         shifted_codes = [instr for instr in self.codes if not fixed[instr]]
         for i, instr in enumerate(fixed_codes):
-            if isinstance(instr, If):
+            if isinstance(instr, If) and set(self.cond.regs) & set(instr.write_regs):
                 # condition is blocked by (at least) one If
                 # expand this If may remove the blocker to some extent
                 # note: there's a little duplicated work here
                 codes = fixed_codes[:i]
                 cond = instr.cond
-                rest_codes = fixed_codes[i + 1:] + shifted_codes
-                yes_block = BasicBlock(rest_codes + self.yes_block.codes, self.yes_block.cond, self.yes_block.yes_block,
-                                       self.yes_block.no_block)
-                no_block = BasicBlock(rest_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
-                                      self.no_block.no_block)
-                return BasicBlock(codes, cond, yes_block.relocate_cond(), no_block.relocate_cond())
+                rest_codes = fixed_codes[i + 1:]
+                yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
+                no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
+                return BasicBlock(codes, cond, yes_block.relocate_cond(), no_block.relocate_cond()).relocate_cond()
 
         if shifted_codes:
             yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
