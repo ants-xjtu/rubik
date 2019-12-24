@@ -27,11 +27,12 @@ class SetValue(Instr):
 
 
 class Command(SetValue):
-    def __init__(self, provider: int, name: str, args: List['Value']):
+    def __init__(self, provider: int, name: str, args: List['Value'], opt_target: bool = False):
         super(Command, self).__init__(provider, AggValue(args, '<should not evaluate>'))
         self.provider = provider
         self.name = name
         self.args = args
+        self.opt_target = opt_target
 
     def __str__(self):
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -74,6 +75,22 @@ class If(Instr):
         for instr in self.no:
             no_env = instr.affect(no_env)
         return {reg: yes_env[reg] for reg in yes_env.keys() & no_env.keys()}
+
+    def make_block(self, prev: List[Instr], after: List[Instr]) -> 'BasicBlock':
+        choice = False
+        for instr in self.yes + self.no:
+            if isinstance(instr, Command) and instr.opt_target:
+                choice = True
+        if choice:
+            return BasicBlock(prev, self.cond, BasicBlock.from_codes(self.yes + after),
+                              BasicBlock.from_codes(self.no + after))
+        else:
+            after_block = BasicBlock.from_codes(after)
+            return BasicBlock(prev + [self] + after_block.codes, after_block.cond, after_block.yes_block,
+                              after_block.no_block)
+
+    def __str__(self):
+        return f'If {self.cond} Do /* {len(self.yes)} code(s) */ Else /* {len(self.no)} code(s) */'
 
 
 class Value:
@@ -145,12 +162,13 @@ class BasicBlock:
             return BasicBlock(block_codes)
         else:
             if_instr = cast(If, codes[first_if_index])
-            cond = if_instr.cond
+            # cond = if_instr.cond
             rest_codes = codes[first_if_index + 1:]
-            yes_codes = if_instr.yes + rest_codes
-            no_codes = if_instr.no + rest_codes
-            return BasicBlock(block_codes, cond, BasicBlock.from_codes(yes_codes),
-                              BasicBlock.from_codes(no_codes))
+            # yes_codes = if_instr.yes + rest_codes
+            # no_codes = if_instr.no + rest_codes
+            # return BasicBlock(block_codes, cond, BasicBlock.from_codes(yes_codes),
+            #                   BasicBlock.from_codes(no_codes))
+            return if_instr.make_block(block_codes, rest_codes)
 
     @staticmethod
     def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
@@ -219,7 +237,7 @@ class BasicBlock:
         label_line = f'L{self.block_id}:\n'
         code_lines = [str(instr) for instr in self.codes]
         if self.cond is not None:
-            code_lines.append(f'If {self.cond} Goto L{self.yes_block.block_id} Else Goto L{self.no_block.block_id}')
+            code_lines.append(f'Goto If {self.cond} L{self.yes_block.block_id} Else L{self.no_block.block_id}')
         if not code_lines:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
@@ -244,6 +262,20 @@ class BasicBlock:
 
         fixed_codes = [instr for instr in self.codes if fixed[instr]]
         shifted_codes = [instr for instr in self.codes if not fixed[instr]]
+        for i, instr in enumerate(fixed_codes):
+            if isinstance(instr, If):
+                # condition is blocked by (at least) one If
+                # expand this If may remove the blocker to some extent
+                # note: there's a little duplicated work here
+                codes = fixed_codes[:i]
+                cond = instr.cond
+                rest_codes = fixed_codes[i + 1:] + shifted_codes
+                yes_block = BasicBlock(rest_codes + self.yes_block.codes, self.yes_block.cond, self.yes_block.yes_block,
+                                       self.yes_block.no_block)
+                no_block = BasicBlock(rest_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
+                                      self.no_block.no_block)
+                return BasicBlock(codes, cond, yes_block.relocate_cond(), no_block.relocate_cond())
+
         if shifted_codes:
             yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
                                    self.yes_block.yes_block,

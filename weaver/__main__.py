@@ -1,7 +1,26 @@
-from weaver.misc.code import ip
-from weaver.code import BasicBlock
+# from weaver.misc.code import ip
+from weaver.code import *
 
-b1 = BasicBlock.from_codes(ip)
+b1 = BasicBlock.from_codes([
+    Command(0, 'Create', [], opt_target=True),
+    If(EqualTest(1, Value([], '0')), [
+        If(EqualTest(2, Value([0], '1')), [
+            SetValue(1, Value([], '1')),
+        ]),
+    ], [
+           If(EqualTest(1, Value([], '1')), [
+               If(EqualTest(2, Value([0], '1')), [
+                   SetValue(1, Value([], '1')),
+               ]),
+               If(EqualTest(2, Value([], '0')), [
+                   SetValue(1, Value([], '0')),
+               ]),
+           ]),
+       ]),
+    If(EqualTest(1, Value([], '0')), [
+        Command(0, 'Destroy', [], opt_target=True),
+    ], []),
+])
 
 for block in b1.recursive():
     print(block)
