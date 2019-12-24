@@ -34,7 +34,7 @@ class Command(SetValue):
         self.args = args
 
     def __str__(self):
-        args_str = ', '.format(*(str(arg) for arg in self.args))
+        args_str = ', '.join(str(arg) for arg in self.args)
         return f'${self.provider}->{self.name}({args_str})'
 
     def affect(self, env: Dict[int, int]) -> Dict[int, int]:
@@ -244,10 +244,15 @@ class BasicBlock:
 
         fixed_codes = [instr for instr in self.codes if fixed[instr]]
         shifted_codes = [instr for instr in self.codes if not fixed[instr]]
-        if not shifted_codes:
+        if shifted_codes:
+            yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
+                                   self.yes_block.yes_block,
+                                   self.yes_block.no_block).relocate_cond()
+            no_block = BasicBlock(shifted_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
+                                  self.no_block.no_block).relocate_cond()
+        else:
+            yes_block = self.yes_block.relocate_cond()
+            no_block = self.no_block.relocate_cond()
+        if yes_block is self.yes_block and no_block is self.no_block:
             return self
-        return BasicBlock(fixed_codes, self.cond, BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
-                                                             self.yes_block.yes_block,
-                                                             self.yes_block.no_block).relocate_cond(),
-                          BasicBlock(shifted_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
-                                     self.no_block.no_block).relocate_cond())
+        return BasicBlock(fixed_codes, self.cond, yes_block, no_block)

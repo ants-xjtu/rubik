@@ -15,11 +15,11 @@ ready = Value([sequence], 'seq->ready')
 
 saddr = Value([header_parser], 'header->saddr')
 daddr = Value([header_parser], 'header->daddr')
-DUMP = Value([], '0');
+DUMP = Value([], '0')
 FRAG = Value([], '1')
-dump = Value([], '0');
-frag = Value([], '1');
-last = Value([], '2');
+dump = Value([], '0')
+frag = Value([], '1')
+last = Value([], '2')
 more = Value([], '3')
 dont_frag = Value([header_parser], 'header->dont_frag')
 more_frag = Value([header_parser], 'header->more_frag')

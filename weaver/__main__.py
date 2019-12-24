@@ -7,14 +7,16 @@ for block in b1.recursive():
     print(block)
     print()
 
-print('after')
 while True:
     print('iterating')
-    b2 = b1.relocate_cond().eval_reduce()
-    if b2 is b1:
+    b2 = b1.relocate_cond()
+    print('relocate: ', b2 is not b1)
+    b3 = b2.eval_reduce()
+    print('evaluate: ', b3 is not b2)
+    if b3 is b1:
         break
-    b1 = b2
-b1 = b2
+    b1 = b3
+b1 = b3
 count = 0
 nop_count = 0
 for block in b1.recursive():
