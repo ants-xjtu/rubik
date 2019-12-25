@@ -212,9 +212,10 @@ tcp = [
        update_window(reg_active_lwnd, reg_active_wscale, reg_active_wsize, reg_passive_lwnd, reg_passive_wscale,
                      reg_passive_wsize)),
     Command(sequence, 'InsertMeta',
-            [value_seq_num, Value([reg_data_len], '{0}'), Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')],
+            [Value([instance_table]), value_seq_num, Value([reg_data_len], '{0}'),
+             Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')],
             opt_target=True),
-    Command(sequence, 'InsertData', [Value([reg_data], '{0}')], opt_target=True),
+    Command(sequence, 'InsertData', [Value([instance_table]), Value([reg_data], '{0}')], opt_target=True),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, CLOSED), [

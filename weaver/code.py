@@ -234,17 +234,27 @@ class BasicBlock:
             yield from self.yes_block.recursive()
             yield from self.no_block.recursive()
 
+    class IfDep(Exception):
+        def __init__(self, i, instr):
+            super().__init__()
+            self.i = i
+            self.instr = instr
+
     def build_fixed(self) -> List[bool]:
         fixed = [False] * len(self.codes)
         if self.cond is None:
             return fixed
         read_regs = set(self.cond.regs)
+        write_regs = set()
         for i_1 in range(len(self.codes), 0, -1):
             i = i_1 - 1
             instr = self.codes[i]
-            if set(instr.write_regs) & read_regs:
+            if set(instr.write_regs) & read_regs or set(instr.read_regs) & write_regs:
+                if isinstance(instr, If):
+                    raise BasicBlock.IfDep(i, instr)
                 fixed[i] = True
                 read_regs.update(instr.read_regs)
+                write_regs.update(instr.write_regs)
                 if isinstance(instr, SetValue):
                     for write_reg in instr.write_regs:
                         read_regs.discard(write_reg)
@@ -254,21 +264,22 @@ class BasicBlock:
         if self.cond is None:
             return self
 
-        fixed = self.build_fixed()
+        try:
+            fixed = self.build_fixed()
+        except BasicBlock.IfDep as if_dep:
+            i, instr = if_dep.i, if_dep.instr
+            # condition is blocked by (at least) one If
+            # expand this If may remove the blocker to some extent
+            # note: there's a little duplicated work here
+            codes = self.codes[:i]
+            cond = instr.cond
+            rest_codes = self.codes[i + 1:]
+            yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
+            no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
+            return BasicBlock(codes, cond, yes_block, no_block).relocate_cond()
+
         fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
         shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
-        for i, instr in enumerate(fixed_codes):
-            if isinstance(instr, If) and set(self.cond.regs) & set(instr.write_regs):
-                # condition is blocked by (at least) one If
-                # expand this If may remove the blocker to some extent
-                # note: there's a little duplicated work here
-                codes = fixed_codes[:i]
-                cond = instr.cond
-                rest_codes = fixed_codes[i + 1:]
-                yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
-                no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
-                return BasicBlock(codes, cond, yes_block.relocate_cond(), no_block.relocate_cond()).relocate_cond()
-
         if shifted_codes:
             yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
                                    self.yes_block.yes_block,
