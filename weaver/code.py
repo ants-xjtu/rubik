@@ -236,22 +236,6 @@ class BasicBlock:
         # return BasicBlock.recursive_build(scanned)
         return BasicBlock(scanned)
 
-    @staticmethod
-    def recursive_build(codes: List[Instr]) -> 'BasicBlock':
-        # https://stackoverflow.com/a/8534381
-        first_if_index = next((i for i, instr in enumerate(codes) if isinstance(instr, Choice)), len(codes))
-        block_codes = codes[:first_if_index]
-        if first_if_index == len(codes):
-            return BasicBlock(block_codes)
-        else:
-            if_instr = cast(If, codes[first_if_index])
-            cond = if_instr.cond
-            rest_codes = codes[first_if_index + 1:]
-            yes_codes = if_instr.yes + rest_codes
-            no_codes = if_instr.no + rest_codes
-            return BasicBlock(block_codes, cond, BasicBlock.recursive_build(yes_codes),
-                              BasicBlock.recursive_build(no_codes))
-
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
         consts = cast(Dict[int, int], consts or {})
         affected_consts = dict(consts)
@@ -320,8 +304,7 @@ class BasicBlock:
 
     def build_fixed(self) -> List[bool]:
         fixed = [False] * len(self.codes)
-        if self.cond is None:
-            return fixed
+        assert self.cond is not None
         read_regs = set(self.cond.regs)
         write_regs = set()
         command_write = set()
