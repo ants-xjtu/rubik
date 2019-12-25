@@ -1,7 +1,7 @@
 from weaver.misc.code import *
 from weaver.code import *
 
-b1 = BasicBlock.from_codes(ip)
+b1 = BasicBlock.from_codes(tcp)
 
 for block in b1.recursive():
     print(block)

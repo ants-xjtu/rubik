@@ -249,7 +249,9 @@ class BasicBlock:
         for i_1 in range(len(self.codes), 0, -1):
             i = i_1 - 1
             instr = self.codes[i]
-            if set(instr.write_regs) & read_regs or set(instr.read_regs) & write_regs:
+            instr_read = set(instr.read_regs)
+            instr_write = set(instr.write_regs)
+            if instr_write & read_regs or instr_read & write_regs or instr_write & write_regs:
                 if isinstance(instr, If):
                     raise BasicBlock.IfDep(i, instr)
                 fixed[i] = True
