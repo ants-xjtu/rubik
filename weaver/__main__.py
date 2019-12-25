@@ -1,18 +1,18 @@
 from weaver.misc.code import *
-from weaver.code import *
+from weaver.code1 import *
 
 b1 = BasicBlock.from_codes(tcp)
 
-for block in b1.recursive():
-    print(block)
-    print()
+# for block in b1.recursive():
+#     print(block)
+#     print()
 
 while True:
     print('iterating')
-    b2 = b1.relocate_cond()
-    print('relocate: ', b2 is not b1)
-    b3 = b2.eval_reduce()
-    print('evaluate: ', b3 is not b2)
+    b2 = b1.eval_reduce()
+    print('evaluate: ', b2 is not b1)
+    b3 = b2.relocate_cond()
+    print('relocate: ', b3 is not b2)
     if b3 is b1:
         break
     b1 = b3

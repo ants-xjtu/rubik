@@ -1,4 +1,4 @@
-from typing import List, cast, Dict, Tuple, Optional, Generator
+from typing import List, cast, Dict, Tuple, Optional, Generator, Union, Set
 
 
 class Instr:
@@ -155,22 +155,79 @@ class BasicBlock:
         BasicBlock.count += 1
 
     @staticmethod
-    def scan_codes(codes: List[Instr]) -> Tuple[List[Instr], bool]:
+    def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
+        dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
+        # all instructions that (possibly) processes the last writing to a register,
+        # and all instructions that read the register after the last writing
+        reg_graph: Dict[int, Tuple[List[Instr], List[Instr]]] = {}
+        for instr in cast(List[SetValue], codes):
+            dep_graph[instr] = set()
+            for write_reg in instr.write_regs:
+                # the writing must be after all the readings which expect the old value
+                # the writing also must be after the previous writing to prevent to store wrong value eventually
+                if write_reg in reg_graph:
+                    all_write, all_read = reg_graph[write_reg]
+                    dep_graph[instr].update(all_write)
+                    dep_graph[instr].update(all_read)
+            # the reading must be after any writing
+            for read_reg in instr.read_regs:
+                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
+                    dep_graph[instr].update(reg_graph[read_reg][0])
+
+            # update register graph with current instruction
+            for write_reg in instr.write_regs:
+                if isinstance(instr, If):
+                    # if the writing happens, the instruction becomes the one performs the last writing
+                    # otherwise `write_reg` is untouched
+                    if write_reg not in reg_graph:
+                        reg_graph[write_reg] = [], []
+                    reg_graph[write_reg][0].append(instr)
+                else:
+                    # the writing clears all reading if exist
+                    reg_graph[write_reg] = [instr], []
+            # the readings are appended
+            for read_reg in instr.read_regs:
+                if read_reg not in reg_graph:
+                    reg_graph[read_reg] = [], []
+                reg_graph[read_reg][1].append(instr)
+
+        if cond is not None:
+            dep_graph[cond] = set()
+            for read_reg in cond.regs:
+                if read_reg in reg_graph and reg_graph[read_reg][0] is not None:
+                    dep_graph[cond].update(reg_graph[read_reg][0])
+        return dep_graph
+
+    @staticmethod
+    def scan_codes(codes: List[Instr], agg_choice: Value = None) -> Tuple[List[Instr], bool]:
         choice = False
-        scanned = []
-        for instr in codes:
+        dep_graph = BasicBlock.build_dep_graph(codes, agg_choice)
+        scanned: List[Optional[Instr]] = [None] * len(codes)
+        if agg_choice is not None:
+            choice_instr = {instr: instr in dep_graph[agg_choice] for instr in codes}
+        else:
+            choice_instr = {instr: False for instr in codes}
+        for i in (j - 1 for j in range(len(codes), 0, -1)):
+            instr = codes[i]
             if isinstance(instr, Command) and instr.opt_target:
                 choice = True
             if isinstance(instr, If):
-                scanned_yes, choice_yes = BasicBlock.scan_codes(instr.yes)
-                scanned_no, choice_no = BasicBlock.scan_codes(instr.no)
+                scanned_yes, choice_yes = BasicBlock.scan_codes(instr.yes, agg_choice)
+                scanned_no, choice_no = BasicBlock.scan_codes(instr.no, agg_choice)
                 if choice_yes or choice_no:
                     choice = True
-                    scanned.append(Choice(instr.cond, scanned_yes, scanned_no))
+                    if agg_choice is not None:
+                        agg_choice = Value(agg_choice.regs + instr.read_regs)
+                    else:
+                        agg_choice = Value(instr.read_regs)
+                if choice_yes or choice_no or choice_instr[instr]:
+                    for dep_instr in dep_graph[instr]:
+                        choice_instr[dep_instr] = True
+                    scanned[i] = Choice(instr.cond, scanned_yes, scanned_no)
                 else:
-                    scanned.append(instr)
+                    scanned[i] = instr
             else:
-                scanned.append(instr)
+                scanned[i] = instr
         return scanned, choice
 
     @staticmethod
@@ -279,6 +336,10 @@ class BasicBlock:
             yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
             no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
             return BasicBlock(codes, cond, yes_block, no_block).relocate_cond()
+
+        # except BasicBlock.IfDep:
+        #     # after preprocess in scan_codes, there should be no dependent If exists
+        #     raise
 
         fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
         shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
