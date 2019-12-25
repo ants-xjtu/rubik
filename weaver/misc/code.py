@@ -1,7 +1,8 @@
-from weaver.code1 import *
+from weaver.code import *
 from typing import List
 
 # system:
+runtime = 0
 header_parser = 100
 instance_table = 101
 sequence = 102
@@ -84,7 +85,7 @@ ip = [
     Command(instance_table, 'Set{seen_dont_frag}', [Value([1003], '{0}')]),
     If(EqualTest(psm_state, DUMP), [
         If(AggValue([Value([header_parser], 'header->protocol'), Value([], '42')], '{0} == {1}'), [
-            Command(0, 'Next', [], opt_target=True),
+            Command(runtime, 'Next', [], opt_target=True),
             Command(instance_table, 'Destroy', [], opt_target=True),
         ])
     ])
@@ -160,6 +161,16 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
     ]
 
 
+def to_rst(from_state: Value):
+    to_state = AggValue([from_state], f'{{0}} + {TERMINATE}')
+    trans = AggValue([from_state], f'{{0}} + {trans_wv4}')
+    return If(Value([header_parser], 'header->rst'), [
+        SetValue(psm_trans, trans),
+        SetValue(psm_state, to_state),
+        SetValue(psm_triggered, yes),
+    ])
+
+
 tcp = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
@@ -229,6 +240,7 @@ tcp = [
                 SetValue(psm_state, SYN_SENT),
                 SetValue(psm_triggered, yes),
             ]),
+            to_rst(CLOSED),
             SetValue(psm_triggered, yes),
         ]),
     ]),
@@ -239,6 +251,7 @@ tcp = [
                 SetValue(psm_state, SYN_RECV),
                 SetValue(psm_triggered, yes),
             ]),
+            to_rst(SYN_SENT),
             SetValue(psm_triggered, yes),
         ]),
     ]),
@@ -254,6 +267,7 @@ tcp = [
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
+            to_rst(SYN_RECV),
             SetValue(psm_triggered, yes),
         ]),
     ]),
@@ -274,6 +288,7 @@ tcp = [
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
+            to_rst(EST),
             SetValue(psm_triggered, yes),
         ]),
     ]),
@@ -301,35 +316,42 @@ tcp = [
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
+            to_rst(FIN_WAIT),
             SetValue(psm_triggered, yes),
         ]),
     ]),
-    # If(EqualTest(psm_triggered, no), [
-    #     If(EqualTest(psm_state, CLOSE_WAIT), [
-    #         If(value_fin, [
-    #             SetValue(psm_trans, trans_wv3),
-    #             SetValue(psm_state, LAST_ACK),
-    #             SetValue(psm_triggered, yes),
-    #         ]),
-    #         SetValue(psm_triggered, yes),
-    #     ]),
-    # ]),
-    # If(EqualTest(psm_triggered, no), [
-    #     If(EqualTest(psm_state, LAST_ACK), [
-    #         If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} && {1} + 1 == {2}'), [
-    #             SetValue(reg_wv4_expr, yes),
-    #         ]),
-    #         If(EqualTest(reg_wv4_expr, yes), [
-    #             If(ready, [
-    #                 SetValue(psm_trans, trans_wv4),
-    #                 SetValue(psm_state, TERMINATE),
-    #                 SetValue(psm_triggered, yes),
-    #             ]),
-    #         ]),
-    #         SetValue(psm_triggered, yes),
-    #     ]),
-    # ]),
+    If(EqualTest(psm_triggered, no), [
+        If(EqualTest(psm_state, CLOSE_WAIT), [
+            If(value_fin, [
+                SetValue(psm_trans, trans_wv3),
+                SetValue(psm_state, LAST_ACK),
+                SetValue(psm_triggered, yes),
+            ]),
+            to_rst(CLOSE_WAIT),
+            SetValue(psm_triggered, yes),
+        ]),
+    ]),
+    If(EqualTest(psm_triggered, no), [
+        If(EqualTest(psm_state, LAST_ACK), [
+            If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} && {1} + 1 == {2}'), [
+                SetValue(reg_wv4_expr, yes),
+            ]),
+            If(EqualTest(reg_wv4_expr, yes), [
+                If(ready, [
+                    SetValue(psm_trans, trans_wv4),
+                    SetValue(psm_state, TERMINATE),
+                    SetValue(psm_triggered, yes),
+                ]),
+            ]),
+            to_rst(LAST_ACK),
+            SetValue(psm_triggered, yes),
+        ]),
+    ]),
     If(EqualTest(psm_trans, trans_buffering), [
         Command(sequence, 'Assemble', [], opt_target=True),
     ]),
+    # there is (probably) no next layer, so let's fake a custom event
+    If(EqualTest(psm_state, EST), [
+        Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True),
+    ])
 ]

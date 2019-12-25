@@ -1,11 +1,12 @@
 from weaver.misc.code import *
-from weaver.code1 import *
+from weaver.code import *
 
 b1 = BasicBlock.from_codes(tcp)
 
-# for block in b1.recursive():
-#     print(block)
-#     print()
+for block in b1.recursive():
+    print(block)
+    print()
+print('Used block count: ', BasicBlock.count)
 
 while True:
     print('iterating')

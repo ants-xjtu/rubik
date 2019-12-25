@@ -88,9 +88,9 @@ class Choice(If):
         yes_str = '\n'.join(str(instr) for instr in self.yes)
         no_str = '\n'.join(str(instr) for instr in self.no)
         if yes_str:
-            yes_str = '\n' + yes_str.replace('\n', '\n  ') + '\n'
+            yes_str = ('\n' + yes_str).replace('\n', '\n  ') + '\n'
         if no_str:
-            no_str = '\n' + no_str.replace('\n', '\n  ') + '\n'
+            no_str = ('\n' + no_str).replace('\n', '\n  ') + '\n'
         return f'Choice {self.cond} {{{yes_str}}} Else {{{no_str}}}'
 
 
@@ -233,7 +233,8 @@ class BasicBlock:
     @staticmethod
     def from_codes(codes: List[Instr]) -> 'BasicBlock':
         scanned, _ = BasicBlock.scan_codes(codes)
-        return BasicBlock.recursive_build(scanned)
+        # return BasicBlock.recursive_build(scanned)
+        return BasicBlock(scanned)
 
     @staticmethod
     def recursive_build(codes: List[Instr]) -> 'BasicBlock':
@@ -253,25 +254,45 @@ class BasicBlock:
 
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
         consts = cast(Dict[int, int], consts or {})
+        affected_consts = dict(consts)
+        for i, instr in enumerate(self.codes):
+            if isinstance(instr, Choice):
+                prev_codes = self.codes[:i]
+                after_codes = self.codes[i + 1:]
+                choice_cond = instr.cond.try_eval(affected_consts)
+                if choice_cond is not None:
+                    if choice_cond != 0:
+                        codes = prev_codes + instr.yes + after_codes
+                    else:
+                        codes = prev_codes + instr.no + after_codes
+                    return BasicBlock(codes, self.cond, self.yes_block, self.no_block).eval_reduce(consts)
+                else:
+                    # beg for this not too heavy
+                    codes = prev_codes
+                    cond = instr.cond
+                    yes_block = BasicBlock(instr.yes + after_codes, self.cond, self.yes_block, self.no_block)
+                    no_block = BasicBlock(instr.no + after_codes, self.cond, self.yes_block, self.no_block)
+                    return BasicBlock(codes, cond, yes_block, no_block).eval_reduce(consts)
+            affected_consts = instr.affect(affected_consts)
         if self.cond is None:
             return self
-        for instr in self.codes:
-            consts = instr.affect(consts)
-        cond_value = self.cond.try_eval(consts)
+        cond_value = self.cond.try_eval(affected_consts)
         if cond_value is not None:
             if cond_value == 0:
-                selected_block = self.no_block.eval_reduce(consts)
+                selected_block = self.no_block.eval_reduce(affected_consts)
             else:
-                selected_block = self.yes_block.eval_reduce(consts)
+                selected_block = self.yes_block.eval_reduce(affected_consts)
             return BasicBlock(self.codes + selected_block.codes, selected_block.cond, selected_block.yes_block,
                               selected_block.no_block)
         else:
-            yes_consts = dict(consts)
+            yes_consts = affected_consts
             if isinstance(self.cond, EqualTest):
-                equal_value = self.cond.equal_value.try_eval(consts)
-                yes_consts[self.cond.equal_reg] = equal_value
+                equal_value = self.cond.equal_value.try_eval(affected_consts)
+                if equal_value is not None:
+                    yes_consts = dict(affected_consts)
+                    yes_consts[self.cond.equal_reg] = equal_value
             yes_block = self.yes_block.eval_reduce(yes_consts)
-            no_block = self.no_block.eval_reduce(consts)
+            no_block = self.no_block.eval_reduce(affected_consts)
             if yes_block is self.yes_block and no_block is self.no_block:
                 return self
             return BasicBlock(self.codes, self.cond, yes_block, no_block)
