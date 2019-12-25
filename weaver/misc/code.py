@@ -123,13 +123,13 @@ reg_passive_wsize = 1009
 reg_active_lwnd = 1010
 reg_active_wscale = 1011
 reg_active_wsize = 1012
+reg_seen_ack = 1013
+reg_seen_fin = 1014
+reg_wv2_expr = 1015
+reg_wv2_fast_expr = 1016
+reg_wv4_expr = 1017
 reg_wnd = 2000
 reg_wnd_size = 2001
-reg_seen_ack = 2002
-reg_seen_fin = 2003
-reg_wv2_expr = 2004
-reg_wv2_fast_expr = 2005
-reg_wv4_expr = 2006
 value_payload = Value([header_parser], 'header_meta->payload')
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
 value_seq_num = Value([header_parser], 'header->seq_num')
@@ -353,5 +353,24 @@ tcp = [
     # there is (probably) no next layer, so let's fake a custom event
     If(EqualTest(psm_state, EST), [
         Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True),
+    ]),
+    Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')]),
+    Command(instance_table, 'Set{reg_data_len}', [Value([reg_data_len], '{0}')]),
+    Command(instance_table, 'Set{reg_data}', [Value([reg_data], '{0}')]),
+    Command(instance_table, 'Set{reg_fin_seq_1}', [Value([reg_fin_seq_1], '{0}')]),
+    Command(instance_table, 'Set{reg_fin_seq_2}', [Value([reg_fin_seq_2], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_lwnd}', [Value([reg_passive_lwnd], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_wscale}', [Value([reg_passive_wscale], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_wsize}', [Value([reg_passive_wsize], '{0}')]),
+    Command(instance_table, 'Set{reg_active_lwnd}', [Value([reg_active_lwnd], '{0}')]),
+    Command(instance_table, 'Set{reg_active_wscale}', [Value([reg_active_wscale], '{0}')]),
+    Command(instance_table, 'Set{reg_active_wsize}', [Value([reg_active_wsize], '{0}')]),
+    Command(instance_table, 'Set{reg_seen_ack}', [Value([reg_seen_ack], '{0}')]),
+    Command(instance_table, 'Set{reg_seen_fin}', [Value([reg_seen_fin], '{0}')]),
+    Command(instance_table, 'Set{reg_wv2_expr}', [Value([reg_wv2_expr], '{0}')]),
+    Command(instance_table, 'Set{reg_wv2_fast_expr}', [Value([reg_wv2_fast_expr], '{0}')]),
+    Command(instance_table, 'Set{reg_wv4_expr}', [Value([reg_wv4_expr], '{0}')]),
+    If(EqualTest(psm_state, TERMINATE), [
+        Command(instance_table, 'Destroy', [], opt_target=True),
     ])
 ]

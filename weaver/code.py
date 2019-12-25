@@ -324,13 +324,13 @@ class BasicBlock:
             return fixed
         read_regs = set(self.cond.regs)
         write_regs = set()
-        for i_1 in range(len(self.codes), 0, -1):
-            i = i_1 - 1
+        command_write = set()
+        for i in (j - 1 for j in range(len(self.codes), 0, -1)):
             instr = self.codes[i]
             instr_read = set(instr.read_regs)
             instr_write = set(instr.write_regs)
             if instr_write & read_regs or instr_read & write_regs or instr_write & write_regs:
-                if isinstance(instr, If):
+                if not instr_read & command_write and isinstance(instr, If):
                     raise BasicBlock.IfDep(i, instr)
                 fixed[i] = True
                 read_regs.update(instr.read_regs)
@@ -338,6 +338,8 @@ class BasicBlock:
                 if isinstance(instr, SetValue):
                     for write_reg in instr.write_regs:
                         read_regs.discard(write_reg)
+                if isinstance(instr, Command):
+                    command_write.update(instr.write_regs)
         return fixed
 
     def relocate_cond(self) -> 'BasicBlock':
