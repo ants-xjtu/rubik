@@ -130,6 +130,7 @@ reg_wv2_fast_expr = 1016
 reg_wv4_expr = 1017
 reg_wnd = 2000
 reg_wnd_size = 2001
+reg_to_active = 2002
 value_payload = Value([header_parser], 'header_meta->payload')
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
 value_seq_num = Value([header_parser], 'header->seq_num')
@@ -137,8 +138,8 @@ value_ack = Value([header_parser], 'header->ack')
 value_ack_num = Value([header_parser], 'header->ack_num')
 value_syn = Value([header_parser], 'header->syn')
 value_fin = Value([header_parser], 'header->fin')
-value_to_active = Value([instance_table], 'ToActive()')
-value_to_passive = Value([instance_table], 'ToPassive()')
+value_to_active = Value([reg_to_active], '{0}')
+value_to_passive = Value([reg_to_active], 'not {0}')
 
 
 def assign_data(data: Value, data_len: Value) -> List[Instr]:
@@ -174,6 +175,7 @@ def to_rst(from_state: Value):
 tcp = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
+        SetValue(reg_to_active, Value([instance_table], 'InstToActive()')),
         SetValue(psm_state, Value([instance_table], 'inst->state')),
         SetValue(reg_fin_seq_1, Value([instance_table], 'inst->reg_fin_seq_1')),
         SetValue(reg_fin_seq_2, Value([instance_table], 'inst->reg_fin_seq_2')),
@@ -190,6 +192,7 @@ tcp = [
         SetValue(reg_wv4_expr, Value([instance_table], 'inst->reg_wv4_expr')),
     ], [
            Command(instance_table, 'Create', [saddr, sport, daddr, dport], opt_target=True),
+           SetValue(reg_to_active, no),
            SetValue(psm_state, CLOSED),
            SetValue(reg_fin_seq_1, no),
            SetValue(reg_fin_seq_2, no),

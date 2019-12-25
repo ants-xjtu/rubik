@@ -256,7 +256,7 @@ class BasicBlock:
         consts = cast(Dict[int, int], consts or {})
         affected_consts = dict(consts)
         for i, instr in enumerate(self.codes):
-            if isinstance(instr, Choice):
+            if isinstance(instr, If):
                 prev_codes = self.codes[:i]
                 after_codes = self.codes[i + 1:]
                 choice_cond = instr.cond.try_eval(affected_consts)
@@ -266,7 +266,7 @@ class BasicBlock:
                     else:
                         codes = prev_codes + instr.no + after_codes
                     return BasicBlock(codes, self.cond, self.yes_block, self.no_block).eval_reduce(consts)
-                else:
+                elif isinstance(instr, Choice):
                     # beg for this not too heavy
                     codes = prev_codes
                     cond = instr.cond
