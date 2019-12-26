@@ -1,15 +1,11 @@
 from weaver.code import *
+from weaver.code.reg import *
 from typing import List
 
-# system:
-runtime = 0
-header_parser = 100
-instance_table = 101
-sequence = 102
 # common:
 psm_state = 1000
-psm_triggered = 1001
-psm_trans = 1002
+psm_triggered = 2000
+psm_trans = 2001
 
 yes = Value([], '1')
 no = Value([], '0')
@@ -26,15 +22,17 @@ last = Value([], '2')
 more = Value([], '3')
 dont_frag = Value([header_parser], 'header->dont_frag')
 more_frag = Value([header_parser], 'header->more_frag')
+seen_dont_frag = 2002
 ip = [
+    Command(header_parser, 'Parse', []),
     If(AggValue([Value([instance_table]), saddr, daddr], 'InstExist({1}, {2})'), [
         Command(instance_table, 'Fetch', [saddr, daddr]),
         SetValue(psm_state, Value([instance_table], 'inst->state')),
-        SetValue(1003, Value([instance_table], 'inst->seen_dont_frag')),
+        SetValue(seen_dont_frag, Value([instance_table], 'inst->seen_dont_frag')),
     ], [
            Command(instance_table, 'Create', [saddr, daddr], opt_target=True),
            SetValue(psm_state, DUMP),
-           SetValue(1003, no),
+           SetValue(seen_dont_frag, no),
        ]),
     Command(sequence, 'InsertMeta',
             [Value([instance_table]), Value([header_parser], 'header->offset'),
@@ -61,16 +59,16 @@ ip = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, FRAG), [
             If(dont_frag, [
-                SetValue(1003, yes),
+                SetValue(seen_dont_frag, yes),
             ]),
-            If(EqualTest(1003, yes), [
+            If(EqualTest(seen_dont_frag, yes), [
                 If(ready, [
                     SetValue(psm_trans, last),
                     SetValue(psm_state, DUMP),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
-            If(AggValue([EqualTest(1003, no), Value([sequence], '!SeqReady()')], '{0} || {1}'), [
+            If(AggValue([EqualTest(seen_dont_frag, no), ready], '{0} || {1}'), [
                 SetValue(psm_trans, frag),
                 SetValue(psm_state, FRAG),
                 SetValue(psm_triggered, yes),
@@ -82,7 +80,7 @@ ip = [
         Command(sequence, 'Assemble', [], opt_target=True),
     ]),
     Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')]),
-    Command(instance_table, 'Set{seen_dont_frag}', [Value([1003], '{0}')]),
+    Command(instance_table, 'Set{seen_dont_frag}', [Value([seen_dont_frag], '{0}')]),
     If(EqualTest(psm_state, DUMP), [
         If(AggValue([Value([header_parser], 'header->protocol'), Value([], '42')], '{0} == {1}'), [
             Command(runtime, 'Next', [], opt_target=True),
@@ -113,24 +111,24 @@ trans_wv2_fast = Value([], '7')
 trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
-reg_data_len = 1003
-reg_data = 1004
-reg_fin_seq_1 = 1005
-reg_fin_seq_2 = 1006
-reg_passive_lwnd = 1007
-reg_passive_wscale = 1008
-reg_passive_wsize = 1009
-reg_active_lwnd = 1010
-reg_active_wscale = 1011
-reg_active_wsize = 1012
-reg_seen_ack = 1013
-reg_seen_fin = 1014
-reg_wv2_expr = 1015
-reg_wv2_fast_expr = 1016
-reg_wv4_expr = 1017
-reg_wnd = 2000
-reg_wnd_size = 2001
-reg_to_active = 2002
+reg_data_len = 1001
+reg_data = 1002
+reg_fin_seq_1 = 1003
+reg_fin_seq_2 = 1004
+reg_passive_lwnd = 1005
+reg_passive_wscale = 1006
+reg_passive_wsize = 1007
+reg_active_lwnd = 108
+reg_active_wscale = 109
+reg_active_wsize = 1010
+reg_seen_ack = 1011
+reg_seen_fin = 1012
+reg_wv2_expr = 1013
+reg_wv2_fast_expr = 1014
+reg_wv4_expr = 1015
+reg_wnd = 2002
+reg_wnd_size = 2003
+reg_to_active = 2004
 value_payload = Value([header_parser], 'header_meta->payload')
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
 value_seq_num = Value([header_parser], 'header->seq_num')
@@ -173,6 +171,7 @@ def to_rst(from_state: Value):
 
 
 tcp = [
+    Command(header_parser, 'Parse', []),
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
         SetValue(reg_to_active, Value([instance_table], 'InstToActive()')),
