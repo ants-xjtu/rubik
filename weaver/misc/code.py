@@ -3,15 +3,15 @@ from weaver.code.reg import *
 from typing import List
 
 # common:
-psm_state = 1000
-psm_triggered = 2000
-psm_trans = 2001
-
 yes = Value([], '1')
 no = Value([], '0')
 ready = Value([sequence], 'seq->ready')
 
 # IP protocol
+psm_state = 1000
+psm_triggered = 2000
+psm_trans = 2001
+
 saddr = Value([header_parser], 'header->saddr')
 daddr = Value([header_parser], 'header->daddr')
 DUMP = Value([], '0')
@@ -90,6 +90,10 @@ ip = [
 ]
 
 # TCP protocol
+psm_state = 3000
+psm_triggered = 4000
+psm_trans = 4001
+
 sport = Value([header_parser], 'header->sport')
 dport = Value([header_parser], 'header->dport')
 CLOSED = Value([], '0')
@@ -111,24 +115,24 @@ trans_wv2_fast = Value([], '7')
 trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
-reg_data_len = 1001
-reg_data = 1002
-reg_fin_seq_1 = 1003
-reg_fin_seq_2 = 1004
-reg_passive_lwnd = 1005
-reg_passive_wscale = 1006
-reg_passive_wsize = 1007
-reg_active_lwnd = 108
-reg_active_wscale = 109
-reg_active_wsize = 1010
-reg_seen_ack = 1011
-reg_seen_fin = 1012
-reg_wv2_expr = 1013
-reg_wv2_fast_expr = 1014
-reg_wv4_expr = 1015
-reg_wnd = 2002
-reg_wnd_size = 2003
-reg_to_active = 2004
+reg_data_len = 3001
+reg_data = 3002
+reg_fin_seq_1 = 3003
+reg_fin_seq_2 = 3004
+reg_passive_lwnd = 3005
+reg_passive_wscale = 3006
+reg_passive_wsize = 3007
+reg_active_lwnd = 3008
+reg_active_wscale = 3009
+reg_active_wsize = 3010
+reg_seen_ack = 3011
+reg_seen_fin = 3012
+reg_wv2_expr = 3013
+reg_wv2_fast_expr = 3014
+reg_wv4_expr = 3015
+reg_wnd = 4002
+reg_wnd_size = 4003
+reg_to_active = 4004
 value_payload = Value([header_parser], 'header_meta->payload')
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
 value_seq_num = Value([header_parser], 'header->seq_num')

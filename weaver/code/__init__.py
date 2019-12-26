@@ -344,7 +344,7 @@ class BasicBlock:
             rest_codes = self.codes[i + 1:]
             yes_block = BasicBlock(instr.yes + rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
             no_block = BasicBlock(rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
-            return BasicBlock(codes, cond, self.group_aux, yes_block, no_block).relocate_cond()
+            return BasicBlock(codes, self.group_aux, cond, yes_block, no_block).relocate_cond()
 
         # except BasicBlock.IfDep:
         #     # after preprocess in scan_codes, there should be no dependent If exists
