@@ -1,5 +1,6 @@
 from weaver.code import *
 from weaver.code.reg import *
+from weaver.util import make_reg
 from typing import List
 
 # common:
@@ -8,9 +9,9 @@ no = Value([], '0')
 ready = Value([sequence], 'seq->ready')
 
 # IP protocol
-psm_state = 1000
-psm_triggered = 2000
-psm_trans = 2001
+psm_state = make_reg(1000, 1)
+psm_triggered = make_reg(2000, 1)
+psm_trans = make_reg(2001, 2)
 
 saddr = Value([header_parser], 'header->saddr')
 daddr = Value([header_parser], 'header->daddr')
@@ -22,7 +23,7 @@ last = Value([], '2')
 more = Value([], '3')
 dont_frag = Value([header_parser], 'header->dont_frag')
 more_frag = Value([header_parser], 'header->more_frag')
-seen_dont_frag = 2002
+seen_dont_frag = make_reg(2002, 1)
 ip = [
     Command(header_parser, 'Parse', []),
     If(AggValue([Value([instance_table]), saddr, daddr], 'InstExist({1}, {2})'), [
@@ -90,9 +91,9 @@ ip = [
 ]
 
 # TCP protocol
-psm_state = 3000
-psm_triggered = 4000
-psm_trans = 4001
+psm_state = make_reg(3000, 1)
+psm_triggered = make_reg(4000, 1)
+psm_trans = make_reg(4001, 2)
 
 sport = Value([header_parser], 'header->sport')
 dport = Value([header_parser], 'header->dport')
@@ -115,24 +116,24 @@ trans_wv2_fast = Value([], '7')
 trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
-reg_data_len = 3001
-reg_data = 3002
-reg_fin_seq_1 = 3003
-reg_fin_seq_2 = 3004
-reg_passive_lwnd = 3005
-reg_passive_wscale = 3006
-reg_passive_wsize = 3007
-reg_active_lwnd = 3008
-reg_active_wscale = 3009
-reg_active_wsize = 3010
-reg_seen_ack = 3011
-reg_seen_fin = 3012
-reg_wv2_expr = 3013
-reg_wv2_fast_expr = 3014
-reg_wv4_expr = 3015
-reg_wnd = 4002
-reg_wnd_size = 4003
-reg_to_active = 4004
+reg_data_len = make_reg(3001, 4)
+reg_data = make_reg(3002)
+reg_fin_seq_1 = make_reg(3003, 4)
+reg_fin_seq_2 = make_reg(3004, 4)
+reg_passive_lwnd = make_reg(3005, 4)
+reg_passive_wscale = make_reg(3006, 1)
+reg_passive_wsize = make_reg(3007, 4)
+reg_active_lwnd = make_reg(3008, 4)
+reg_active_wscale = make_reg(3009, 1)
+reg_active_wsize = make_reg(3010, 4)
+reg_seen_ack = make_reg(3011, 1)
+reg_seen_fin = make_reg(3012, 1)
+reg_wv2_expr = make_reg(3013, 1)
+reg_wv2_fast_expr = make_reg(3014, 1)
+reg_wv4_expr = make_reg(3015, 1)
+reg_wnd = make_reg(4002, 4)
+reg_wnd_size = make_reg(4003, 4)
+reg_to_active = make_reg(4004, 1)
 value_payload = Value([header_parser], 'header_meta->payload')
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
 value_seq_num = Value([header_parser], 'header->seq_num')
