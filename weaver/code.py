@@ -1,4 +1,6 @@
 from typing import List, cast, Dict, Tuple, Optional, Generator, Union, Set
+from weaver.auxiliary import BlockGroupAux
+from weaver.util import make_block
 
 
 class Instr:
@@ -87,11 +89,7 @@ class Choice(If):
     def __str__(self):
         yes_str = '\n'.join(str(instr) for instr in self.yes)
         no_str = '\n'.join(str(instr) for instr in self.no)
-        if yes_str:
-            yes_str = ('\n' + yes_str).replace('\n', '\n  ') + '\n'
-        if no_str:
-            no_str = ('\n' + no_str).replace('\n', '\n  ') + '\n'
-        return f'Choice {self.cond} {{{yes_str}}} Else {{{no_str}}}'
+        return f'Choice {self.cond} {make_block(yes_str)} Else {make_block(no_str)}'
 
 
 class Value:
@@ -140,7 +138,7 @@ class EqualTest(AggValue):
 class BasicBlock:
     count = 0
 
-    def __init__(self, codes: List[Instr] = None, cond: Value = None,
+    def __init__(self, codes: List[Instr] = None, group_aux: BlockGroupAux = None, cond: Value = None,
                  yes_block: 'BasicBlock' = None,
                  no_block: 'BasicBlock' = None):
         self.codes = codes or []
@@ -153,6 +151,7 @@ class BasicBlock:
         self.no_block = no_block
         self.block_id = BasicBlock.count
         BasicBlock.count += 1
+        self.group_aux = group_aux or BlockGroupAux()
 
     @staticmethod
     def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
@@ -233,7 +232,6 @@ class BasicBlock:
     @staticmethod
     def from_codes(codes: List[Instr]) -> 'BasicBlock':
         scanned, _ = BasicBlock.scan_codes(codes)
-        # return BasicBlock.recursive_build(scanned)
         return BasicBlock(scanned)
 
     def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
@@ -254,9 +252,11 @@ class BasicBlock:
                     # beg for this not too heavy
                     codes = prev_codes
                     cond = instr.cond
-                    yes_block = BasicBlock(instr.yes + after_codes, self.cond, self.yes_block, self.no_block)
-                    no_block = BasicBlock(instr.no + after_codes, self.cond, self.yes_block, self.no_block)
-                    return BasicBlock(codes, cond, yes_block, no_block).eval_reduce(consts)
+                    yes_block = BasicBlock(instr.yes + after_codes, self.group_aux, self.cond, self.yes_block,
+                                           self.no_block)
+                    no_block = BasicBlock(instr.no + after_codes, self.group_aux, self.cond, self.yes_block,
+                                          self.no_block)
+                    return BasicBlock(codes, self.group_aux, cond, yes_block, no_block).eval_reduce(consts)
             affected_consts = instr.affect(affected_consts)
         if self.cond is None:
             return self
@@ -266,7 +266,8 @@ class BasicBlock:
                 selected_block = self.no_block.eval_reduce(affected_consts)
             else:
                 selected_block = self.yes_block.eval_reduce(affected_consts)
-            return BasicBlock(self.codes + selected_block.codes, selected_block.cond, selected_block.yes_block,
+            return BasicBlock(self.codes + selected_block.codes, self.group_aux, selected_block.cond,
+                              selected_block.yes_block,
                               selected_block.no_block)
         else:
             yes_consts = affected_consts
@@ -279,7 +280,7 @@ class BasicBlock:
             no_block = self.no_block.eval_reduce(affected_consts)
             if yes_block is self.yes_block and no_block is self.no_block:
                 return self
-            return BasicBlock(self.codes, self.cond, yes_block, no_block)
+            return BasicBlock(self.codes, self.group_aux, self.cond, yes_block, no_block)
 
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
@@ -341,9 +342,9 @@ class BasicBlock:
             codes = self.codes[:i]
             cond = instr.cond
             rest_codes = self.codes[i + 1:]
-            yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
-            no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
-            return BasicBlock(codes, cond, yes_block, no_block).relocate_cond()
+            yes_block = BasicBlock(instr.yes + rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
+            no_block = BasicBlock(rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
+            return BasicBlock(codes, cond, self.group_aux, yes_block, no_block).relocate_cond()
 
         # except BasicBlock.IfDep:
         #     # after preprocess in scan_codes, there should be no dependent If exists
@@ -352,14 +353,23 @@ class BasicBlock:
         fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
         shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
         if shifted_codes:
-            yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
+            yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.group_aux, self.yes_block.cond,
                                    self.yes_block.yes_block,
                                    self.yes_block.no_block).relocate_cond()
-            no_block = BasicBlock(shifted_codes + self.no_block.codes, self.no_block.cond, self.no_block.yes_block,
+            no_block = BasicBlock(shifted_codes + self.no_block.codes, self.group_aux, self.no_block.cond,
+                                  self.no_block.yes_block,
                                   self.no_block.no_block).relocate_cond()
         else:
             yes_block = self.yes_block.relocate_cond()
             no_block = self.no_block.relocate_cond()
         if yes_block is self.yes_block and no_block is self.no_block:
             return self
-        return BasicBlock(fixed_codes, self.cond, yes_block, no_block)
+        return BasicBlock(fixed_codes, self.group_aux, self.cond, yes_block, no_block)
+
+    def optimize(self) -> 'BasicBlock':
+        block = self
+        while True:
+            opt_block = block.eval_reduce().relocate_cond()
+            if opt_block is block:
+                return block
+            block = opt_block
