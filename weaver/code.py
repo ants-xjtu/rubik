@@ -175,6 +175,11 @@ class BasicBlock:
                     dep_graph[instr].update(reg_graph[read_reg][0])
 
             # update register graph with current instruction
+            # the readings are appended
+            for read_reg in instr.read_regs:
+                if read_reg not in reg_graph:
+                    reg_graph[read_reg] = [], []
+                reg_graph[read_reg][1].append(instr)
             for write_reg in instr.write_regs:
                 if isinstance(instr, If):
                     # if the writing happens, the instruction becomes the one performs the last writing
@@ -185,11 +190,6 @@ class BasicBlock:
                 else:
                     # the writing clears all reading if exist
                     reg_graph[write_reg] = [instr], []
-            # the readings are appended
-            for read_reg in instr.read_regs:
-                if read_reg not in reg_graph:
-                    reg_graph[read_reg] = [], []
-                reg_graph[read_reg][1].append(instr)
 
         if cond is not None:
             dep_graph[cond] = set()
@@ -318,11 +318,13 @@ class BasicBlock:
                 fixed[i] = True
                 read_regs.update(instr.read_regs)
                 write_regs.update(instr.write_regs)
-                if isinstance(instr, SetValue):
-                    for write_reg in instr.write_regs:
-                        read_regs.discard(write_reg)
+                # if isinstance(instr, SetValue):
+                #     read_regs.discard(instr.reg)
                 if isinstance(instr, Command):
                     command_write.update(instr.write_regs)
+            # else:
+            #     if isinstance(instr, SetValue):
+            #         write_regs.discard(instr.reg)
         return fixed
 
     def relocate_cond(self) -> 'BasicBlock':
