@@ -3,6 +3,7 @@
 #define WV_WEAVER_H
 
 #include <stdint.h>
+#include "runtime/tommyds/tommyhashdyn.h"
 
 typedef uint8_t WV_Byte;
 typedef uint8_t WV_U8;
@@ -14,9 +15,7 @@ typedef struct WV_ByteSlice {
     WV_U32 length;
 } WV_ByteSlice;
 
-typedef struct WV_Table {
-    //
-} WV_Table;
+typedef tommy_hashdyn WV_Table;
 
 typedef struct WV_Runtime {
     WV_Table *tables;

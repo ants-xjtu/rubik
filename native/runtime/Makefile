@@ -1,6 +1,6 @@
 all: libwvrt.a
 
-libwvrt.a: interface.o
+libwvrt.a: interface.o tommyds/tommy.o
 	$(AR) rc $@ $^
 
 %.o: %.c ../weaver.h

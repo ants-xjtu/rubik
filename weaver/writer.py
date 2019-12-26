@@ -18,8 +18,8 @@ def write_all(blocks: List[BasicBlock], entry_id: int) -> str:
     body_text = (
             'WV_U8 status = 0;\n\n' +
             regs_decl + '\n\n' +
-            f'goto L{entry_id};\n' +
-            blocks_text +
+            # f'goto L{entry_id};\n' +
+            # blocks_text +
             f'L_End: {make_block("return status;")}'
     )
     text = (
