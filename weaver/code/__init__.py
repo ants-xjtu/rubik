@@ -1,20 +1,21 @@
 from typing import List, cast, Dict, Tuple, Optional, Generator, Union, Set
-from weaver.auxiliary import BlockGroupAux
+from weaver.auxiliary import BlockGroupAux, ValueAux, InstrAux
 from weaver.util import make_block
 
 
 class Instr:
-    def __init__(self, read_regs: List[int], write_regs: List[int]):
+    def __init__(self, read_regs: List[int], write_regs: List[int], aux: Optional[InstrAux]):
         self.read_regs = read_regs
         self.write_regs = write_regs
+        self.aux = aux or InstrAux()
 
     def affect(self, env: Dict[int, int]) -> Dict[int, int]:
         raise NotImplementedError()
 
 
 class SetValue(Instr):
-    def __init__(self, reg: int, value: 'Value'):
-        super(SetValue, self).__init__(value.regs, [reg])
+    def __init__(self, reg: int, value: 'Value', aux: InstrAux = None):
+        super(SetValue, self).__init__(value.regs, [reg], aux)
         self.reg = reg
         self.value = value
 
@@ -30,7 +31,7 @@ class SetValue(Instr):
 
 class Command(SetValue):
     def __init__(self, provider: int, name: str, args: List['Value'], opt_target: bool = False):
-        super(Command, self).__init__(provider, AggValue(args, '<should not evaluate>'))
+        super(Command, self).__init__(provider, AggValue(args))
         self.provider = provider
         self.name = name
         self.args = args
@@ -55,7 +56,7 @@ class If(Instr):
         for instr in self.yes + self.no:
             read_regs.update(instr.read_regs)
             write_regs.update(instr.write_regs)
-        super(If, self).__init__(list(read_regs), list(write_regs))
+        super(If, self).__init__(list(read_regs), list(write_regs), None)
 
     def affect(self, env: Dict[int, int]) -> Dict[int, int]:
         cond_value = self.cond.try_eval(env)
@@ -93,8 +94,9 @@ class Choice(If):
 
 
 class Value:
-    def __init__(self, regs: List[int], eval_template: str = '<should not evaluate>'):
+    def __init__(self, regs: List[int], eval_template: str = '<should not evaluate>', aux: ValueAux = None):
         self.regs = regs
+        self.aux = aux or ValueAux(eval_template)
         self.eval_template = eval_template
 
     def __str__(self):
@@ -110,9 +112,10 @@ class Value:
 
 
 class AggValue(Value):
-    def __init__(self, values: List[Value], agg_template: str):
+    def __init__(self, values: List[Value], agg_template: str = '<should not evaluate>', aux: ValueAux = None):
         super().__init__(list(set(sum((value.regs for value in values), []))))
         self.values = values
+        self.agg_aux = aux or ValueAux(agg_template)
         self.agg_eval = agg_template
 
     def __str__(self):

@@ -1,5 +1,6 @@
 from weaver.code import *
 from weaver.code.reg import *
+from weaver.auxiliary import *
 from weaver.util import make_reg
 from typing import List
 
@@ -28,8 +29,8 @@ ip = [
     Command(header_parser, 'Parse', []),
     If(AggValue([Value([instance_table]), saddr, daddr], 'InstExist({1}, {2})'), [
         Command(instance_table, 'Fetch', [saddr, daddr]),
-        SetValue(psm_state, Value([instance_table], 'inst->state')),
-        SetValue(seen_dont_frag, Value([instance_table], 'inst->seen_dont_frag')),
+        SetValue(psm_state, Value([instance_table], 'inst->state', InstValueAux('state'))),
+        SetValue(seen_dont_frag, Value([instance_table], 'inst->seen_dont_frag', InstValueAux('seen_dont_frag'))),
     ], [
            Command(instance_table, 'Create', [saddr, daddr], opt_target=True),
            SetValue(psm_state, DUMP),
@@ -69,7 +70,7 @@ ip = [
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
-            If(AggValue([EqualTest(seen_dont_frag, no), ready], '{0} || {1}'), [
+            If(AggValue([EqualTest(seen_dont_frag, no), ready], '{0} or {1}', ValueAux('{0} || {1}')), [
                 SetValue(psm_trans, frag),
                 SetValue(psm_state, FRAG),
                 SetValue(psm_triggered, yes),
@@ -142,7 +143,7 @@ value_ack_num = Value([header_parser], 'header->ack_num')
 value_syn = Value([header_parser], 'header->syn')
 value_fin = Value([header_parser], 'header->fin')
 value_to_active = Value([reg_to_active], '{0}')
-value_to_passive = Value([reg_to_active], 'not {0}')
+value_to_passive = Value([reg_to_active], 'not {0}', ValueAux('!{0}'))
 
 
 def assign_data(data: Value, data_len: Value) -> List[Instr]:
@@ -242,7 +243,7 @@ tcp = [
                 SetValue(psm_state, TERMINATE),
                 SetValue(psm_triggered, yes),
             ]),
-            If(AggValue([value_syn, value_ack], '{0} == 1 && {1} == 0'), [
+            If(AggValue([value_syn, value_ack], '{0} == 1 and {1} == 0', ValueAux('{0} && !{1}')), [
                 SetValue(psm_trans, trans_hs1),
                 SetValue(psm_state, SYN_SENT),
                 SetValue(psm_triggered, yes),
@@ -253,11 +254,12 @@ tcp = [
     ]),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, SYN_SENT), [
-            If(AggValue([value_to_active, value_syn, value_ack], '{0} && {1} == 1 && {2} == 1'), [
-                SetValue(psm_trans, trans_hs2),
-                SetValue(psm_state, SYN_RECV),
-                SetValue(psm_triggered, yes),
-            ]),
+            If(AggValue([value_to_active, value_syn, value_ack], '{0} and {1} == 1 and {2} == 1',
+                        ValueAux('{0} && {1} && !{2}')), [
+                   SetValue(psm_trans, trans_hs2),
+                   SetValue(psm_state, SYN_RECV),
+                   SetValue(psm_triggered, yes),
+               ]),
             to_rst(SYN_SENT),
             SetValue(psm_triggered, yes),
         ]),
@@ -302,7 +304,7 @@ tcp = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, FIN_WAIT), [
             If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
-                        '{0} && {1} == 0 && {2} + 1 == {3}'), [
+                        '{0} and {1} == 0 and {2} + 1 == {3}', ValueAux('{0} && !{1} && {2} + 1 == {3}')), [
                    SetValue(reg_wv2_expr, yes),
                ]),
             If(EqualTest(reg_wv2_expr, yes), [
@@ -313,7 +315,7 @@ tcp = [
                 ]),
             ]),
             If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
-                        '{0} && {1} && {2} + 1 == {3}'), [
+                        '{0} and {1} and {2} + 1 == {3}', ValueAux('{0} && {1} && {2} + 1 == {3}')), [
                    SetValue(reg_wv2_fast_expr, yes),
                ]),
             If(EqualTest(reg_wv2_fast_expr, yes), [
@@ -340,9 +342,10 @@ tcp = [
     ]),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, LAST_ACK), [
-            If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} && {1} + 1 == {2}'), [
-                SetValue(reg_wv4_expr, yes),
-            ]),
+            If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} and {1} + 1 == {2}',
+                        ValueAux('{0} && {1} + 1 == {2}')), [
+                   SetValue(reg_wv4_expr, yes),
+               ]),
             If(EqualTest(reg_wv4_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv4),

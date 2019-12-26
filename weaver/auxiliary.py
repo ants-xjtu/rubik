@@ -52,3 +52,24 @@ class RegAux:
             return f'WV_U{self.byte_len * 8}'
         else:
             return 'WV_ByteSlice'
+
+
+class ValueAux:
+    def __init__(self, cexpr_template: str):
+        self.cexpr_template = cexpr_template
+        self.block: Optional[BasicBlock] = None
+
+
+class InstValueAux(ValueAux):
+    def __init__(self, key):
+        super().__init__('<should not use>')
+        self.key = key
+
+    def write(self):
+        assert self.block is not None
+        return f'table_{self.block.group_aux.table_index}_inst->{self.key}'
+
+
+class InstrAux:
+    def __init__(self):
+        self.block: Optional[BasicBlock] = None
