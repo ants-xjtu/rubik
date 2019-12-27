@@ -101,3 +101,8 @@ class InstrAux:
         else:
             # assert False, 'should call `write` on subclasses'
             return '<placeholder>'
+
+
+class InstExistAux(ValueAux):
+    def write(self, context: ValueContext) -> str:
+        return f'WV_InstExist(&runtime->tables[{context.instr_context.recurse_context.table_index}], ...)'
