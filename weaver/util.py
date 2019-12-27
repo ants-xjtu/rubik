@@ -5,7 +5,8 @@ def make_block(text: str) -> str:
 
 
 def make_reg(reg_id: int, byte_len: int = None, abstract: bool = False):
-    from weaver.auxiliary import reg_aux, RegAux
+    from weaver.auxiliary import RegAux
+    from weaver.auxiliary import reg_aux
 
     reg_aux[reg_id] = RegAux(byte_len, abstract)
     return reg_id

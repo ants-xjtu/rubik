@@ -1,84 +1,139 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Dict, Set
-from weaver.auxiliary import ValueAux, InstrAux, reg_aux
+
+from weaver.auxiliary import reg_aux
+from weaver.code import AggValue, If, SetValue, Command
+from weaver.code.reg import instance_table, sequence
 from weaver.util import make_block
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from weaver.code import Instr, BasicBlock, Value
+    from weaver.writer_context import ValueContext, InstrContext
 
 
-class GlobalContext:
-    def __init__(self, next_table: Dict[Instr, BasicBlock]):
-        self.next_table = next_table
-        self.text = ''
-        self.decl_regs: Set[int] = set()
-        # self.decl_structs
-
-    def execute_block_recurse(self, entry_block: BasicBlock, table_index: int):
-        context = BlockRecurseContext(self, entry_block, table_index)
-        for block in entry_block.recurse():
-            context.execute_block(block)
-
-    def append_text(self, text_part: str):
-        if self.text:
-            self.text += '\n\n'
-        self.text += text_part
-
-    def write_all(self, global_entry: BasicBlock, table_count: int) -> str:
-        decl_text = '\n'.join(reg_aux[reg_id].type_decl() + ' ' + f'_{reg_id};'
-                              for reg_id in self.decl_regs if not reg_aux[reg_id].abstract)
-        body_text = (
-                'WV_U8 status = 0;\n\n' +
-                '// register declaration\n' +
-                decl_text + '\n\n' +
-                f'goto L{global_entry.block_id};\n' +
-                self.text + '\n\n' +
-                f'L_End: {make_block("return status;")}'
-        )
-        text = (
-            '#include "weaver.h"\n\n'
-            f'WV_U8 WV_CONFIG_TABLE_COUNT = {table_count};\n\n'
-            f'WV_U8 WV_ProcessPacket(WV_ByteSlice data, WV_Runtime *runtime) {make_block(body_text)}'
-        )
-        return text
+class ValueWriter:
+    # fallback
+    def write(self, context: ValueContext) -> str:
+        if isinstance(context.value, AggValue):
+            return AggValueWriter(context.value.agg_eval).write(context)
+        else:
+            return TemplateValueWriter(context.value.eval_template).write(context)
 
 
-class BlockRecurseContext:
-    def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, table_index: int):
-        self.global_context = global_context
-        self.entry_block = entry_block
-        self.table_index = table_index
+class TemplateValueWriter(ValueWriter):
+    def __init__(self, cexpr_template: str):
+        self.cexpr_template = cexpr_template
 
-    def execute_block(self, block: BasicBlock):
-        text = f'L{block.block_id}: '
-        codes_text = '\n'.join(
-            InstrContext(self, block, instr).write() for instr in block.codes)
-        self.global_context.append_text(text + make_block(codes_text))
+    def write(self, context: ValueContext) -> str:
+        return self.cexpr_template.format(*(f'_{reg}' for reg in context.value.regs))
 
 
-class InstrContext:
-    def __init__(self, recurse_context: BlockRecurseContext, block: BasicBlock, instr: Instr):
-        self.recurse_context = recurse_context
-        self.block = block
-        self.instr = instr
+class AggValueWriter(ValueWriter):
+    def __init__(self, cexpr_template: str):
+        super().__init__()
+        self.cexpr_template = cexpr_template
 
-    def write(self) -> str:
-        return (self.instr.aux or InstrAux()).write(self)
-
-    def write_instr(self, instr: Instr) -> str:
-        return InstrContext(self.recurse_context, self.block, instr).write()
-
-    def write_value(self, value: Value) -> str:
-        return ValueContext(self, value).write()
+    def write(self, context: ValueContext) -> str:
+        assert isinstance(context.value, AggValue)
+        values_text = ('(' + context.write_value(value) + ')' for value in context.value.values)
+        return self.cexpr_template.format(*values_text)
 
 
-class ValueContext:
-    def __init__(self, instr_context: InstrContext, value: Value):
-        self.instr_context = instr_context
-        self.value = value
+class InstValueWriter(ValueWriter):
+    def __init__(self, key):
+        self.key = key
 
-    def write(self) -> str:
-        return (self.value.aux or ValueAux()).write(self)
+    def write(self, context: ValueContext) -> str:
+        assert instance_table in context.value.regs
+        return f'inst_{context.instr_context.recurse_context.table_index}->{self.key}'
 
-    def write_value(self, value: Value) -> str:
-        return ValueContext(self.instr_context, value).write()
+
+class InstrWriter:
+    # fallback
+    def write(self, context: InstrContext) -> str:
+        if isinstance(context.instr, If):
+            text = f'if ({context.write_value(context.instr.cond)}) '
+            text += make_block('\n'.join(context.write_instr(instr) for instr in context.instr.yes))
+            text += ' else '
+            text += make_block('\n'.join(context.write_instr(instr) for instr in context.instr.no))
+            return text
+        elif isinstance(context.instr, SetValue):
+            # assert not isinstance(context.instr, Command)
+            if isinstance(context.instr, Command):
+                return '<placeholder>'
+            # only registers that has been set value will be declared
+            # this may help find bugs related to use-before-assignment bugs
+            context.recurse_context.global_context.decl_regs.add(context.instr.reg)
+            text = f'_{context.instr.reg} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
+            return text
+        else:
+            # assert False, 'should call `write` on subclasses'
+            return '<placeholder>'
+
+
+class InstExistWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return f'WV_InstExist(&runtime->tables[{context.instr_context.recurse_context.table_index}], ...)'
+
+
+class GetInstWriter(InstrWriter):
+    def __init__(self, method: str):
+        super().__init__()
+        assert method in {'Create', 'Fetch'}
+        self.method = method
+
+    def write(self, context: InstrContext) -> str:
+        table_index = context.recurse_context.table_index
+        return f'inst{table_index} = WV_{self.method}Inst(&runtime->tables[{table_index}], ...);'
+
+
+class SetInstValueWriter(InstrWriter):
+    def __init__(self, key):
+        super(SetInstValueWriter, self).__init__()
+        self.key = key
+
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == instance_table
+        assert len(context.instr.args) == 1
+        return f'inst{context.recurse_context.table_index}->{self.key} = {context.write_value(context.instr.args[0])};'
+
+
+class InsertMetaWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == sequence
+        assert len(context.instr.args) == 3
+        assert instance_table in context.instr.args[0].regs
+        offset, length = context.instr.args[1], context.instr.args[2]
+        return f'WV_InsertMeta(&inst{context.recurse_context.table_index}->seq, {context.write_value(offset)}, {context.write_value(length)});'
+
+
+class InsertDataWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == sequence
+        assert len(context.instr.args) == 2
+        assert instance_table in context.instr.args[0].regs
+        data = context.instr.args[1]
+        return f'WV_InsertData(&inst{context.recurse_context.table_index}->seq, {context.write_value(data)});'
+
+
+class SeqReadyWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        assert sequence in context.value.regs
+        return f'WV_SeqReady(&inst{context.instr_context.recurse_context.table_index}->seq)'
+
+
+class SeqAssembleWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == sequence
+        table_index = context.recurse_context.table_index
+        return f'bar{table_index} = WV_SeqAssemble(&inst{table_index}->seq);'
+
+
+class DestroyInstWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == instance_table
+        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.table_index}], ...);'
