@@ -1,3 +1,6 @@
+# for displaying correctly with PyCharm Makefile plugin
+LANG=en_US.ISO-8859-1
+
 all: procpkts
 
 procpkts: weaver_blackbox.c native/driver.c native/weaver.h native/runtime/libwvrt.a
