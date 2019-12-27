@@ -93,6 +93,9 @@ class InstrAux:
             # assert not isinstance(context.instr, Command)
             if isinstance(context.instr, Command):
                 return '<placeholder>'
+            # only registers that has been set value will be declared
+            # this may help find bugs related to use-before-assignment bugs
+            context.recurse_context.global_context.decl_regs.add(context.instr.reg)
             text = f'_{context.instr.reg} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
             return text
         else:
