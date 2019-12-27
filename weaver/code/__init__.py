@@ -1,13 +1,14 @@
-from typing import List, cast, Dict, Tuple, Optional, Generator, Union, Set
-from weaver.auxiliary import BlockGroupAux, ValueAux, InstrAux
+from __future__ import annotations
+from typing import TYPE_CHECKING, List, cast, Dict, Tuple, Optional, Generator, Union, Set
 from weaver.util import make_block
-
+if TYPE_CHECKING:
+    from weaver.auxiliary import InstrAux, ValueAux
 
 class Instr:
     def __init__(self, read_regs: List[int], write_regs: List[int], aux: Optional[InstrAux]):
         self.read_regs = read_regs
         self.write_regs = write_regs
-        self.aux = aux or InstrAux()
+        self.aux = aux
 
     def affect(self, env: Dict[int, int]) -> Dict[int, int]:
         raise NotImplementedError()
@@ -30,8 +31,8 @@ class SetValue(Instr):
 
 
 class Command(SetValue):
-    def __init__(self, provider: int, name: str, args: List['Value'], opt_target: bool = False):
-        super(Command, self).__init__(provider, AggValue(args))
+    def __init__(self, provider: int, name: str, args: List['Value'], opt_target: bool = False, aux: InstrAux = None):
+        super(Command, self).__init__(provider, AggValue(args), aux)
         self.provider = provider
         self.name = name
         self.args = args
@@ -96,7 +97,7 @@ class Choice(If):
 class Value:
     def __init__(self, regs: List[int], eval_template: str = '<should not evaluate>', aux: ValueAux = None):
         self.regs = regs
-        self.aux = aux or ValueAux(eval_template)
+        self.aux: Optional[ValueAux] = aux
         self.eval_template = eval_template
 
     def __str__(self):
@@ -113,9 +114,8 @@ class Value:
 
 class AggValue(Value):
     def __init__(self, values: List[Value], agg_template: str = '<should not evaluate>', aux: ValueAux = None):
-        super().__init__(list(set(sum((value.regs for value in values), []))))
+        super().__init__(list(set(sum((value.regs for value in values), []))), aux=aux)
         self.values = values
-        self.agg_aux = aux or ValueAux(agg_template)
         self.agg_eval = agg_template
 
     def __str__(self):
@@ -141,7 +141,7 @@ class EqualTest(AggValue):
 class BasicBlock:
     count = 0
 
-    def __init__(self, codes: List[Instr] = None, group_aux: BlockGroupAux = None, cond: Value = None,
+    def __init__(self, codes: List[Instr] = None, cond: Value = None,
                  yes_block: 'BasicBlock' = None,
                  no_block: 'BasicBlock' = None):
         self.codes = codes or []
@@ -154,7 +154,6 @@ class BasicBlock:
         self.no_block = no_block
         self.block_id = BasicBlock.count
         BasicBlock.count += 1
-        self.group_aux = group_aux or BlockGroupAux()
 
     @staticmethod
     def build_dep_graph(codes: List[Instr], cond: Value = None) -> Dict[Union[Instr, Value], Set[Instr]]:
@@ -255,11 +254,11 @@ class BasicBlock:
                     # beg for this not too heavy
                     codes = prev_codes
                     cond = instr.cond
-                    yes_block = BasicBlock(instr.yes + after_codes, self.group_aux, self.cond, self.yes_block,
+                    yes_block = BasicBlock(instr.yes + after_codes, self.cond, self.yes_block,
                                            self.no_block)
-                    no_block = BasicBlock(instr.no + after_codes, self.group_aux, self.cond, self.yes_block,
+                    no_block = BasicBlock(instr.no + after_codes, self.cond, self.yes_block,
                                           self.no_block)
-                    return BasicBlock(codes, self.group_aux, cond, yes_block, no_block).eval_reduce(consts)
+                    return BasicBlock(codes, cond, yes_block, no_block).eval_reduce(consts)
             affected_consts = instr.affect(affected_consts)
         if self.cond is None:
             return self
@@ -269,7 +268,7 @@ class BasicBlock:
                 selected_block = self.no_block.eval_reduce(affected_consts)
             else:
                 selected_block = self.yes_block.eval_reduce(affected_consts)
-            return BasicBlock(self.codes + selected_block.codes, self.group_aux, selected_block.cond,
+            return BasicBlock(self.codes + selected_block.codes, selected_block.cond,
                               selected_block.yes_block,
                               selected_block.no_block)
         else:
@@ -283,7 +282,7 @@ class BasicBlock:
             no_block = self.no_block.eval_reduce(affected_consts)
             if yes_block is self.yes_block and no_block is self.no_block:
                 return self
-            return BasicBlock(self.codes, self.group_aux, self.cond, yes_block, no_block)
+            return BasicBlock(self.codes, self.cond, yes_block, no_block)
 
     def __str__(self):
         label_line = f'L{self.block_id}:\n'
@@ -294,11 +293,11 @@ class BasicBlock:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
 
-    def recursive(self) -> Generator['BasicBlock', None, None]:
+    def recurse(self) -> Generator['BasicBlock', None, None]:
         yield self
         if self.cond is not None:
-            yield from self.yes_block.recursive()
-            yield from self.no_block.recursive()
+            yield from self.yes_block.recurse()
+            yield from self.no_block.recurse()
 
     class IfDep(Exception):
         def __init__(self, i, instr):
@@ -345,9 +344,9 @@ class BasicBlock:
             codes = self.codes[:i]
             cond = instr.cond
             rest_codes = self.codes[i + 1:]
-            yes_block = BasicBlock(instr.yes + rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
-            no_block = BasicBlock(rest_codes, self.group_aux, self.cond, self.yes_block, self.no_block)
-            return BasicBlock(codes, self.group_aux, cond, yes_block, no_block).relocate_cond()
+            yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
+            no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
+            return BasicBlock(codes, cond, yes_block, no_block).relocate_cond()
 
         # except BasicBlock.IfDep:
         #     # after preprocess in scan_codes, there should be no dependent If exists
@@ -356,10 +355,10 @@ class BasicBlock:
         fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
         shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
         if shifted_codes:
-            yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.group_aux, self.yes_block.cond,
+            yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
                                    self.yes_block.yes_block,
                                    self.yes_block.no_block).relocate_cond()
-            no_block = BasicBlock(shifted_codes + self.no_block.codes, self.group_aux, self.no_block.cond,
+            no_block = BasicBlock(shifted_codes + self.no_block.codes, self.no_block.cond,
                                   self.no_block.yes_block,
                                   self.no_block.no_block).relocate_cond()
         else:
@@ -367,7 +366,7 @@ class BasicBlock:
             no_block = self.no_block.relocate_cond()
         if yes_block is self.yes_block and no_block is self.no_block:
             return self
-        return BasicBlock(fixed_codes, self.group_aux, self.cond, yes_block, no_block)
+        return BasicBlock(fixed_codes, self.cond, yes_block, no_block)
 
     def optimize(self) -> 'BasicBlock':
         block = self
