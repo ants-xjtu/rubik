@@ -72,3 +72,4 @@ fabric.properties
 
 
 test_*.txt
+*.pcap

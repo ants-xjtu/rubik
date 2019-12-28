@@ -4,7 +4,7 @@ LANG=en_US.ISO-8859-1
 all: procpkts
 
 procpkts: weaver_blackbox.c native/driver.c native/weaver.h native/runtime/libwvrt.a
-	$(CC) -g -o $@ -I./native -lpcap $^
+	$(CC) -g -O3 -o $@ $^ -I./native -lpcap
 
 weaver_blackbox.c:
 	python3 -m weaver > $@

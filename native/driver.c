@@ -2,6 +2,11 @@
 #include <pcap.h>
 #include "weaver.h"
 
+void proc(WV_Byte *runtime, const struct pcap_pkthdr *pcap_header, const WV_Byte *pcap_data) {
+    WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
+    WV_ProcessPacket(packet, (void *)runtime);
+}
+
 int main(int argc, char *argv[]) {
     if (argc <= 1) {
         printf("no pcap file\n");
@@ -22,18 +27,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    struct pcap_pkthdr *pcap_header;
-    const WV_Byte *pcap_data;
-    WV_U32 packet_count = 0;
-    while (pcap_next_ex(pcap_packets, &pcap_header, &pcap_data)) {
-        WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
-        WV_ProcessPacket(packet, &runtime);
-        packet_count += 1;
-        if (packet_count % 100000 == 0) {
-            printf(".");
-        }
-    }
-    printf("\n");
+    pcap_loop(pcap_packets, -1, proc, (void *)&runtime);
 
     pcap_close(pcap_packets);
 

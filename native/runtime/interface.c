@@ -19,4 +19,5 @@ WV_U8 WV_CleanRuntime(WV_Runtime *runtime) {
         tommy_hashdyn_foreach(&runtime->tables[i], free);
         tommy_hashdyn_done(&runtime->tables[i]);
     }
+    return 0;
 }
