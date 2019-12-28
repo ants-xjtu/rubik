@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from weaver.auxiliary import reg_aux
 from weaver.code import AggValue, If, SetValue, Command
-from weaver.code.reg import instance_table, sequence, runtime
+from weaver.code.reg import instance_table, sequence, runtime, header_parser
 from weaver.util import make_block
-from typing import TYPE_CHECKING
+from weaver.header import LocateStruct
+from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
     from weaver.writer_context import ValueContext, InstrContext
+    from weaver.header import ParseAction
 
 
 class ValueWriter:
@@ -24,7 +26,8 @@ class TemplateValueWriter(ValueWriter):
         self.cexpr_template = cexpr_template
 
     def write(self, context: ValueContext) -> str:
-        return self.cexpr_template.format(*(reg_aux.write(reg) for reg in context.value.regs))
+        return self.cexpr_template.format(
+            *(reg_aux.write(context.instr_context, reg) for reg in context.value.regs))
 
 
 class AggValueWriter(ValueWriter):
@@ -63,7 +66,7 @@ class InstrWriter:
             # # only registers that has been set value will be declared
             # # this may help find bugs related to use-before-assignment bugs
             # context.recurse_context.global_context.decl_regs.add(context.instr.reg)
-            text = f'{reg_aux.write(context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
+            text = f'{reg_aux.write(context, context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
             return text
         else:
             # assert False, 'should call `write` on subclasses'
@@ -145,3 +148,20 @@ class NextWriter(InstrWriter):
         assert context.instr.provider == runtime
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
         return f'goto L{next_entry}; L{next_entry}_Ret:'
+
+
+class ParseHeaderWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == header_parser
+        return self.write_actions(context.recurse_context.actions)
+
+    def write_actions(self, actions: List[ParseAction]) -> str:
+        text = ''
+        for action in actions:
+            if isinstance(action, LocateStruct):
+                text += f'_h{action.struct.struct_id} = (void *)current.cursor;\n'
+                text += f'current = WV_SliceAfter(current, {action.struct.byte_length});'
+            else:
+                raise NotImplementedError()
+        return text

@@ -28,12 +28,17 @@ WV_U8 WV_ProcessPacket(WV_ByteSlice, WV_Runtime *);
 
 WV_U8 WV_InitRuntime(WV_Runtime *);
 
-extern inline WV_U16 WV_HToN16(WV_U16 x) {
+static inline WV_U16 WV_HToN16(WV_U16 x) {
     return htons(x);
 }
 
-extern inline WV_U32 WV_HToN32(WV_U32 x) {
+static inline WV_U32 WV_HToN32(WV_U32 x) {
     return htonl(x);
+}
+
+static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index) {
+    WV_ByteSlice after = { .cursor = slice.cursor + index, .length = slice.length - index };
+    return after;
 }
 
 #endif

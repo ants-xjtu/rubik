@@ -13,7 +13,7 @@ ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 # Ethernet protocol
 next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 eth = [
-    Command(header_parser, 'Parse', []),
+    Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     If(Value([header_parser, eth_type], '{1} == WV_HToN16(0x0800)'), [
         # next_ip,
     ]),

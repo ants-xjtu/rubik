@@ -17,4 +17,4 @@ clean:
 	-$(RM) native/weaver.h.gch
 	$(MAKE) -C native/runtime clean
 
-.PHONY: all clean weaver_blackbox.c
+.PHONY: all clean weaver_blackbox.c native/runtime/libwvrt.a

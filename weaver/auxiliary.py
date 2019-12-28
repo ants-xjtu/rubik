@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Dict
 
 if TYPE_CHECKING:
     from weaver.code import Reg
+    from weaver.writer_context import InstrContext
 
 
 class RegTable:
@@ -24,8 +25,11 @@ class RegTable:
         self[reg_id] = aux
         return reg_id
 
-    def write(self, reg: Reg) -> str:
-        return self[reg].value_name(reg)
+    def write(self, context: BlockRecurseContext, reg: Reg) -> str:
+        return self[reg].value_name(context, reg)
+
+    def decl(self, reg: Reg) -> str:
+        return self[reg].decl(reg)
 
 
 reg_aux = RegTable()
@@ -45,11 +49,26 @@ class RegAux:
         else:
             return 'WV_ByteSlice'
 
-    def value_name(self, reg: Reg) -> str:
+    def value_name(self, context: InstrContext, reg: Reg) -> str:
         return f'_{reg}'
+
+    def decl(self, reg: Reg) -> str:
+        return f'{self.type_decl()} _{reg};'
 
 
 class StructRegAux(RegAux):
-    def __init__(self, bit_len: int):
-        super(StructRegAux, self).__init__(4, abstract=True)
+    def __init__(self, byte_len: int, bit_len: int = None):
+        if bit_len is not None:
+            assert byte_len == 1
+            assert 0 < bit_len <= 8
+        super(StructRegAux, self).__init__(byte_len)
         self.bit_len = bit_len
+
+    def value_name(self, context: InstrContext, reg: Reg) -> str:
+        return f'_h{context.recurse_context.struct_regs_owner[reg].struct_id}->_{reg}'
+
+    def decl(self, reg: Reg) -> str:
+        if self.bit_len is None:
+            return super().decl(reg)
+        else:
+            return f'{self.type_decl()} _{reg}: {self.bit_len};'
