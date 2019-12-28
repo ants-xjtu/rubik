@@ -13,10 +13,13 @@ class GlobalContext:
         self.next_table = next_table
         self.text = ''
         self.decl_regs: Set[int] = set()
+        self.pre_text = ''
         # self.decl_structs
 
-    def execute_block_recurse(self, entry_block: BasicBlock, table_index: int):
-        context = BlockRecurseContext(self, entry_block, table_index)
+    def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int):
+        context = BlockRecurseContext(self, entry_block, layer_id)
+        self.pre_text += f'Layer{layer_id}_Inst *layer{layer_id}_inst;\n'
+        self.pre_text += f'VW_ByteSlice layer{layer_id}_content;\n'
         for block in entry_block.recurse():
             context.execute_block(block)
 
@@ -30,11 +33,13 @@ class GlobalContext:
                               for reg_id in self.decl_regs if not reg_aux[reg_id].abstract)
         body_text = (
                 'WV_U8 status = 0;\n\n' +
-                '// register declaration\n' +
+                '// registers declaration\n' +
                 decl_text + '\n\n' +
+                '// layer variables declaration\n' +
+                self.pre_text + '\n' +
                 f'goto L{global_entry.block_id};\n' +
                 self.text + '\n\n' +
-                f'L_End: {make_block("return status;")}'
+                f'L{global_entry.block_id}_Ret: {make_block("return status;")}'
         )
         text = (
             '#include "weaver.h"\n\n'
@@ -45,15 +50,21 @@ class GlobalContext:
 
 
 class BlockRecurseContext:
-    def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, table_index: int):
+    def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, layer_id: int):
         self.global_context = global_context
         self.entry_block = entry_block
-        self.table_index = table_index
+        self.layer_id = layer_id
 
     def execute_block(self, block: BasicBlock):
         text = f'L{block.block_id}: '
         codes_text = '\n'.join(
             InstrContext(self, block, instr).write() for instr in block.codes)
+        if codes_text:
+            codes_text += '\n'
+        if block.cond is not None:
+            codes_text += f'if ({InstrContext(self, block, None).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
+        else:
+            codes_text += f'goto L{self.entry_block.block_id}_Ret;'
         self.global_context.append_text(text + make_block(codes_text))
 
 

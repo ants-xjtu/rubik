@@ -86,10 +86,10 @@ ip = [
     Command(instance_table, 'Set{seen_dont_frag}', [Value([seen_dont_frag], '{0}')],
             aux=SetInstValueWriter('seen_dont_frag')),
     If(EqualTest(psm_state, DUMP), [
-        If(AggValue([Value([header_parser], 'header->protocol'), Value([], '42')], '{0} == {1}'), [
+        If(AggValue([Value([header_parser], 'header->protocol'), Value([], '6')], '{0} == {1}'), [
             next_tcp,
-            Command(instance_table, 'Destroy', [], opt_target=True, aux=DestroyInstWriter()),
-        ])
+        ]),
+        Command(instance_table, 'Destroy', [], opt_target=True, aux=DestroyInstWriter()),
     ])
 ]
 

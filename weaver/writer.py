@@ -44,7 +44,7 @@ class InstValueWriter(ValueWriter):
 
     def write(self, context: ValueContext) -> str:
         assert instance_table in context.value.regs
-        return f'inst_{context.instr_context.recurse_context.table_index}->{self.key}'
+        return f'layer{context.instr_context.recurse_context.layer_id}_inst->{self.key}'
 
 
 class InstrWriter:
@@ -72,7 +72,7 @@ class InstrWriter:
 
 class InstExistWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return f'WV_InstExist(&runtime->tables[{context.instr_context.recurse_context.table_index}], ...)'
+        return f'WV_InstExist(&runtime->tables[{context.instr_context.recurse_context.layer_id}], ...)'
 
 
 class GetInstWriter(InstrWriter):
@@ -82,8 +82,8 @@ class GetInstWriter(InstrWriter):
         self.method = method
 
     def write(self, context: InstrContext) -> str:
-        table_index = context.recurse_context.table_index
-        return f'inst{table_index} = WV_{self.method}Inst(&runtime->tables[{table_index}], ...);'
+        layer_id = context.recurse_context.layer_id
+        return f'layer{layer_id}_inst = WV_{self.method}Inst(&runtime->tables[{layer_id}], ...);'
 
 
 class SetInstValueWriter(InstrWriter):
@@ -95,7 +95,7 @@ class SetInstValueWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
         assert len(context.instr.args) == 1
-        return f'inst{context.recurse_context.table_index}->{self.key} = {context.write_value(context.instr.args[0])};'
+        return f'layer{context.recurse_context.layer_id}_inst->{self.key} = {context.write_value(context.instr.args[0])};'
 
 
 class InsertMetaWriter(InstrWriter):
@@ -105,7 +105,7 @@ class InsertMetaWriter(InstrWriter):
         assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         offset, length = context.instr.args[1], context.instr.args[2]
-        return f'WV_InsertMeta(&inst{context.recurse_context.table_index}->seq, {context.write_value(offset)}, {context.write_value(length)});'
+        return f'WV_InsertMeta(&layer{context.recurse_context.layer_id}_inst->seq, {context.write_value(offset)}, {context.write_value(length)});'
 
 
 class InsertDataWriter(InstrWriter):
@@ -115,25 +115,25 @@ class InsertDataWriter(InstrWriter):
         assert len(context.instr.args) == 2
         assert instance_table in context.instr.args[0].regs
         data = context.instr.args[1]
-        return f'WV_InsertData(&inst{context.recurse_context.table_index}->seq, {context.write_value(data)});'
+        return f'WV_InsertData(&layer{context.recurse_context.layer_id}_inst->seq, {context.write_value(data)});'
 
 
 class SeqReadyWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         assert sequence in context.value.regs
-        return f'WV_SeqReady(&inst{context.instr_context.recurse_context.table_index}->seq)'
+        return f'WV_SeqReady(&layer{context.instr_context.recurse_context.layer_id}_inst->seq)'
 
 
 class SeqAssembleWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        table_index = context.recurse_context.table_index
-        return f'bar{table_index} = WV_SeqAssemble(&inst{table_index}->seq);'
+        layer_id = context.recurse_context.layer_id
+        return f'layer{layer_id}_content = WV_SeqAssemble(&layer{layer_id}_inst->seq);'
 
 
 class DestroyInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
-        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.table_index}], ...);'
+        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}], ...);'

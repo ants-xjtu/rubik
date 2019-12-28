@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, List, cast, Dict, Tuple, Optional, Generator, Union, Set
+from typing import *
 from weaver.util import make_block
 if TYPE_CHECKING:
     from weaver.writer import ValueWriter, InstrWriter
@@ -203,25 +203,21 @@ class BasicBlock:
     @staticmethod
     def scan_codes(codes: List[Instr], agg_choice: Value = None) -> Tuple[List[Instr], bool]:
         choice = False
+        agg_choice = agg_choice or Value([])
         dep_graph = BasicBlock.build_dep_graph(codes, agg_choice)
         scanned: List[Optional[Instr]] = [None] * len(codes)
-        if agg_choice is not None:
-            choice_instr = {instr: instr in dep_graph[agg_choice] for instr in codes}
-        else:
-            choice_instr = {instr: False for instr in codes}
+        choice_instr = {instr: instr in dep_graph[agg_choice] for instr in codes}
         for i in (j - 1 for j in range(len(codes), 0, -1)):
             instr = codes[i]
             if isinstance(instr, Command) and instr.opt_target:
                 choice = True
+                agg_choice = Value(list(set(agg_choice.regs + instr.read_regs)))
             if isinstance(instr, If):
                 scanned_yes, choice_yes = BasicBlock.scan_codes(instr.yes, agg_choice)
                 scanned_no, choice_no = BasicBlock.scan_codes(instr.no, agg_choice)
                 if choice_yes or choice_no:
                     choice = True
-                    if agg_choice is not None:
-                        agg_choice = Value(agg_choice.regs + instr.read_regs)
-                    else:
-                        agg_choice = Value(instr.read_regs)
+                    agg_choice = Value(list(set(agg_choice.regs + instr.read_regs)))
                 if choice_yes or choice_no or choice_instr[instr]:
                     for dep_instr in dep_graph[instr]:
                         choice_instr[dep_instr] = True
@@ -229,6 +225,9 @@ class BasicBlock:
                 else:
                     scanned[i] = instr
             else:
+                if choice_instr[instr]:
+                    for dep_instr in dep_graph[instr]:
+                        choice_instr[dep_instr] = True
                 scanned[i] = instr
         return scanned, choice
 
