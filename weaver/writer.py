@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from weaver.auxiliary import reg_aux
 from weaver.code import AggValue, If, SetValue, Command
-from weaver.code.reg import instance_table, sequence
+from weaver.code.reg import instance_table, sequence, runtime
 from weaver.util import make_block
 from typing import TYPE_CHECKING
 
@@ -24,7 +24,7 @@ class TemplateValueWriter(ValueWriter):
         self.cexpr_template = cexpr_template
 
     def write(self, context: ValueContext) -> str:
-        return self.cexpr_template.format(*(f'_{reg}' for reg in context.value.regs))
+        return self.cexpr_template.format(*(reg_aux.write(reg) for reg in context.value.regs))
 
 
 class AggValueWriter(ValueWriter):
@@ -60,10 +60,10 @@ class InstrWriter:
             # assert not isinstance(context.instr, Command)
             if isinstance(context.instr, Command):
                 return '<placeholder>'
-            # only registers that has been set value will be declared
-            # this may help find bugs related to use-before-assignment bugs
-            context.recurse_context.global_context.decl_regs.add(context.instr.reg)
-            text = f'_{context.instr.reg} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
+            # # only registers that has been set value will be declared
+            # # this may help find bugs related to use-before-assignment bugs
+            # context.recurse_context.global_context.decl_regs.add(context.instr.reg)
+            text = f'{reg_aux.write(context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
             return text
         else:
             # assert False, 'should call `write` on subclasses'
@@ -137,3 +137,11 @@ class DestroyInstWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
         return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}], ...);'
+
+
+class NextWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == runtime
+        next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
+        return f'goto L{next_entry}; L{next_entry}_Ret:'

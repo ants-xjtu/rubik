@@ -1,21 +1,20 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 if TYPE_CHECKING:
     from weaver.code import Reg
-    from weaver.header import Struct
 
 
 class RegTable:
     def __init__(self):
-        self.regs = {}
+        self.regs: Dict[Reg, RegAux] = {}
 
-    def __getitem__(self, reg: int):
+    def __getitem__(self, reg: Reg):
         return self.regs[reg]
 
     count = 0
 
-    def __setitem__(self, reg: int, aux: 'RegAux'):
+    def __setitem__(self, reg: Reg, aux: 'RegAux'):
         assert reg not in self.regs
         self.regs[reg] = aux
         self.count = max(self.count, reg + 1)
@@ -24,6 +23,9 @@ class RegTable:
         reg_id = self.count
         self[reg_id] = aux
         return reg_id
+
+    def write(self, reg: Reg) -> str:
+        return self[reg].value_name(reg)
 
 
 reg_aux = RegTable()
@@ -43,12 +45,11 @@ class RegAux:
         else:
             return 'WV_ByteSlice'
 
-    def value_name(self, reg: Reg):
+    def value_name(self, reg: Reg) -> str:
         return f'_{reg}'
 
 
 class StructRegAux(RegAux):
-    def __init__(self, struct: Struct, bit_len: int):
-        super(StructRegAux, self).__init__(4)
-        self.struct = struct
+    def __init__(self, bit_len: int):
+        super(StructRegAux, self).__init__(4, abstract=True)
         self.bit_len = bit_len

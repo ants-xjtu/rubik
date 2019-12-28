@@ -1,13 +1,23 @@
 from weaver.code.reg import *
-from weaver.util import make_reg
 from weaver.code import *
 from weaver.writer import *
+from weaver.misc.header import *
+from weaver.util import make_reg
 from typing import List
 
 # common:
 yes = Value([], '1')
 no = Value([], '0')
 ready = Value([sequence], 'seq->ready', SeqReadyWriter())
+
+# Ethernet protocol
+next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
+eth = [
+    Command(header_parser, 'Parse', []),
+    If(Value([header_parser, eth_type], '{1} == WV_HToN16(0x0800)'), [
+        # next_ip,
+    ]),
+]
 
 # IP protocol
 psm_state = make_reg(1000, 1)
