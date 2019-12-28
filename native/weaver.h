@@ -12,7 +12,7 @@ typedef uint16_t WV_U16;
 typedef uint32_t WV_U32;
 typedef uint64_t WV_U64;
 typedef struct WV_ByteSlice {
-    WV_Byte *cursor;
+    const WV_Byte *cursor;
     WV_U32 length;
 } WV_ByteSlice;
 
@@ -27,6 +27,8 @@ extern WV_U8 WV_CONFIG_TABLE_COUNT;
 WV_U8 WV_ProcessPacket(WV_ByteSlice, WV_Runtime *);
 
 WV_U8 WV_InitRuntime(WV_Runtime *);
+
+WV_U8 WV_CleanRuntime(WV_Runtime *);
 
 static inline WV_U16 WV_HToN16(WV_U16 x) {
     return htons(x);
