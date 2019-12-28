@@ -28,6 +28,7 @@ seen_dont_frag = make_reg(1001, 1)
 next_tcp = Command(runtime, 'Next', [], opt_target=True)
 ip = [
     Command(header_parser, 'Parse', []),
+    Command(instance_table, 'Prefetch', [saddr, daddr]),
     If(AggValue([Value([instance_table]), saddr, daddr], 'InstExist({1}, {2})', InstExistWriter()), [
         Command(instance_table, 'Fetch', [saddr, daddr], aux=GetInstWriter('Fetch')),
         SetValue(psm_state, Value([instance_table], 'inst->state', InstValueWriter('state'))),

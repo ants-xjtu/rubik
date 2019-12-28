@@ -1,22 +1,26 @@
 from __future__ import annotations
 from typing import *
 from weaver.util import make_block
+
 if TYPE_CHECKING:
     from weaver.writer import ValueWriter, InstrWriter
 
+Reg = NewType('Reg', int)
+Env = NewType('Env', Dict[Reg, Any])
+
 
 class Instr:
-    def __init__(self, read_regs: List[int], write_regs: List[int], aux: Optional[InstrWriter]):
+    def __init__(self, read_regs: List[Reg], write_regs: List[Reg], aux: Optional[InstrWriter]):
         self.read_regs = read_regs
         self.write_regs = write_regs
         self.aux = aux
 
-    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+    def affect(self, env: Env) -> Env:
         raise NotImplementedError()
 
 
 class SetValue(Instr):
-    def __init__(self, reg: int, value: 'Value', aux: InstrWriter = None):
+    def __init__(self, reg: Reg, value: 'Value', aux: InstrWriter = None):
         super(SetValue, self).__init__(value.regs, [reg], aux)
         self.reg = reg
         self.value = value
@@ -24,7 +28,7 @@ class SetValue(Instr):
     def __str__(self):
         return f'${self.reg} = {self.value}'
 
-    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+    def affect(self, env: Env) -> Env:
         reg_value = self.value.try_eval(env)
         if reg_value is not None:
             env[self.reg] = reg_value
@@ -32,7 +36,8 @@ class SetValue(Instr):
 
 
 class Command(SetValue):
-    def __init__(self, provider: int, name: str, args: List['Value'], opt_target: bool = False, aux: InstrWriter = None):
+    def __init__(self, provider: Reg, name: str, args: List['Value'], opt_target: bool = False,
+                 aux: InstrWriter = None):
         super(Command, self).__init__(provider, AggValue(args), aux)
         self.provider = provider
         self.name = name
@@ -43,7 +48,7 @@ class Command(SetValue):
         args_str = ', '.join(str(arg) for arg in self.args)
         return f'${self.provider}->{self.name}({args_str})'
 
-    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+    def affect(self, env: Env) -> Env:
         return env
 
 
@@ -60,7 +65,7 @@ class If(Instr):
             write_regs.update(instr.write_regs)
         super(If, self).__init__(list(read_regs), list(write_regs), None)
 
-    def affect(self, env: Dict[int, int]) -> Dict[int, int]:
+    def affect(self, env: Env) -> Env:
         cond_value = self.cond.try_eval(env)
         if cond_value is not None:
             if cond_value == 0:
@@ -96,7 +101,7 @@ class Choice(If):
 
 
 class Value:
-    def __init__(self, regs: List[int], eval_template: str = '<should not evaluate>', aux: ValueWriter = None):
+    def __init__(self, regs: List[Reg], eval_template: str = '<should not evaluate>', aux: ValueWriter = None):
         self.regs = regs
         self.aux: Optional[ValueWriter] = aux
         self.eval_template = eval_template
@@ -104,7 +109,7 @@ class Value:
     def __str__(self):
         return self.eval_template.format(*(f'${reg}' for reg in self.regs))
 
-    def try_eval(self, consts: Dict[int, int]) -> Optional[int]:
+    def try_eval(self, consts: Env) -> Optional[int]:
         reg_values = []
         for reg in self.regs:
             if reg not in consts:
@@ -122,7 +127,7 @@ class AggValue(Value):
     def __str__(self):
         return self.agg_eval.format(*(str(value) for value in self.values))
 
-    def try_eval(self, consts: Dict[int, int]) -> Optional[int]:
+    def try_eval(self, consts: Env) -> Optional[int]:
         evaluated = []
         for value in self.values:
             result = value.try_eval(consts)
@@ -133,7 +138,7 @@ class AggValue(Value):
 
 
 class EqualTest(AggValue):
-    def __init__(self, reg: int, value: Value):
+    def __init__(self, reg: Reg, value: Value):
         super().__init__([Value([reg], '{0}'), value], '{0} == {1}')
         self.equal_reg = reg
         self.equal_value = value
@@ -161,7 +166,7 @@ class BasicBlock:
         dep_graph: Dict[Union[Instr, Value], Set[Instr]] = {}
         # all instructions that (possibly) processes the last writing to a register,
         # and all instructions that read the register after the last writing
-        reg_graph: Dict[int, Tuple[List[Instr], List[Instr]]] = {}
+        reg_graph: Dict[Reg, Tuple[List[Instr], List[Instr]]] = {}
         for instr in cast(List[SetValue], codes):
             dep_graph[instr] = set()
             for write_reg in instr.write_regs:
@@ -236,8 +241,8 @@ class BasicBlock:
         scanned, _ = BasicBlock.scan_codes(codes)
         return BasicBlock(scanned)
 
-    def eval_reduce(self, consts: Dict[int, int] = None) -> 'BasicBlock':
-        consts = cast(Dict[int, int], consts or {})
+    def eval_reduce(self, consts: Env = None) -> 'BasicBlock':
+        consts = cast(Env, consts or {})
         affected_consts = dict(consts)
         for i, instr in enumerate(self.codes):
             if isinstance(instr, If):

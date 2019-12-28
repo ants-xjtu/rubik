@@ -1,3 +1,11 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from weaver.code import Reg
+    from weaver.header import Struct
+
+
 class RegTable:
     def __init__(self):
         self.regs = {}
@@ -34,3 +42,13 @@ class RegAux:
             return f'WV_U{self.byte_len * 8}'
         else:
             return 'WV_ByteSlice'
+
+    def value_name(self, reg: Reg):
+        return f'_{reg}'
+
+
+class StructRegAux(RegAux):
+    def __init__(self, struct: Struct, bit_len: int):
+        super(StructRegAux, self).__init__(4)
+        self.struct = struct
+        self.bit_len = bit_len
