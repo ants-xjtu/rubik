@@ -44,7 +44,7 @@ WV_U8 WV_ProfileRecord(WV_Runtime *runtime, WV_U32 byte_length, WV_U8 status) {
         return 0;
     }
     WV_F interval = current - profile->last_record_sec;
-    WV_F throughput = profile->interval_byte_count / interval / (1 << 30) * 8;
+    WV_F throughput = profile->interval_byte_count / interval / 1e9 * 8;
     printf("checkpoint: %f ms, throughput: %f Gbps\n", current * 1000, throughput);
 
     profile->interval_byte_count = 0;

@@ -1,11 +1,27 @@
 #include <stdio.h>
+#include <signal.h>
 #include <pcap.h>
 #include "weaver.h"
 
-void proc(WV_Byte *runtime, const struct pcap_pkthdr *pcap_header, const WV_Byte *pcap_data) {
+WV_U8 ctrl_c = 0;
+
+void ctrl_c_handler(int sig) {
+    ctrl_c = 1;
+}
+
+typedef struct {
+    WV_Runtime *runtime;
+    pcap_t *pcap;
+} PcapUser;
+
+void proc(WV_Byte *user, const struct pcap_pkthdr *pcap_header, const WV_Byte *pcap_data) {
+    WV_Runtime *runtime = ((PcapUser *)user)->runtime;
     WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
-    WV_U8 status = WV_ProcessPacket(packet, (void *)runtime);
-    WV_ProfileRecord((void *)runtime, pcap_header->len, status);
+    WV_U8 status = WV_ProcessPacket(packet, runtime);
+    WV_ProfileRecord(runtime, pcap_header->len, status);
+    if (ctrl_c) {
+        pcap_breakloop(((PcapUser *)user)->pcap);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -28,9 +44,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    PcapUser user = { .runtime = &runtime, .pcap = pcap_packets };
+
+    signal(SIGINT, ctrl_c_handler);
     WV_ProfileStart(&runtime);
     for (;;) {
-        pcap_loop(pcap_packets, -1, proc, (void *)&runtime);
+        pcap_loop(pcap_packets, -1, proc, (void *)&user);
+        if (ctrl_c) {
+            break;
+        }
         pcap_close(pcap_packets);
         pcap_packets = pcap_open_offline(pcap_filename, errbuf);
     }
@@ -39,6 +61,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "runtime cleanup fail\n");
         return 1;
     }
+
+    printf("\nshut down\n");
 
     return 0;
 }
