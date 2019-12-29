@@ -22,6 +22,7 @@ typedef tommy_hashdyn WV_Table;
 
 typedef struct _WV_Profile {
     WV_U64 interval_byte_count;
+    WV_U32 interval_packet_count;
     WV_U32 next_checkpoint_sec;
     WV_F last_record_sec;
     WV_F last_10_throughput[10];

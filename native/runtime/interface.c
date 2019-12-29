@@ -35,6 +35,10 @@ WV_U8 WV_ProfileRecord(WV_Runtime *runtime, WV_U32 byte_length, WV_U8 status) {
     // TODO: use status
     WV_Profile *profile = &runtime->profile;
     profile->interval_byte_count += byte_length;
+    profile->interval_packet_count += 1;
+    if (profile->interval_packet_count % 1000000 != 0) {
+        return 0;
+    }
     WV_F current = (WV_F)clock() / CLOCKS_PER_SEC;
     if (current < profile->next_checkpoint_sec) {
         return 0;
@@ -44,6 +48,7 @@ WV_U8 WV_ProfileRecord(WV_Runtime *runtime, WV_U32 byte_length, WV_U8 status) {
     printf("checkpoint: %f ms, throughput: %f Gbps\n", current * 1000, throughput);
 
     profile->interval_byte_count = 0;
+    profile->interval_packet_count = 0;
     profile->next_checkpoint_sec += 1;
     profile->last_record_sec = current;
     return 0;
