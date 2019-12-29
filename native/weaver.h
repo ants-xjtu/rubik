@@ -11,15 +11,26 @@ typedef uint8_t WV_U8;
 typedef uint16_t WV_U16;
 typedef uint32_t WV_U32;
 typedef uint64_t WV_U64;
-typedef struct WV_ByteSlice {
+typedef double WV_F;
+
+typedef struct _WV_ByteSlice {
     const WV_Byte *cursor;
     WV_U32 length;
 } WV_ByteSlice;
 
 typedef tommy_hashdyn WV_Table;
 
-typedef struct WV_Runtime {
+typedef struct _WV_Profile {
+    WV_U64 interval_byte_count;
+    WV_U32 next_checkpoint_sec;
+    WV_F last_record_sec;
+    WV_F last_10_throughput[10];
+    WV_F record_count;
+} WV_Profile;
+
+typedef struct _WV_Runtime {
     WV_Table *tables;
+    WV_Profile profile;
 } WV_Runtime;
 
 extern WV_U8 WV_CONFIG_TABLE_COUNT;
@@ -29,6 +40,10 @@ WV_U8 WV_ProcessPacket(WV_ByteSlice, WV_Runtime *);
 WV_U8 WV_InitRuntime(WV_Runtime *);
 
 WV_U8 WV_CleanRuntime(WV_Runtime *);
+
+WV_U8 WV_ProfileStart(WV_Runtime *);
+
+WV_U8 WV_ProfileRecord(WV_Runtime *, WV_U32, WV_U8);
 
 static inline WV_U16 WV_HToN16(WV_U16 x) {
     return htons(x);

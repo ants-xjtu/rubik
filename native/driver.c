@@ -4,7 +4,8 @@
 
 void proc(WV_Byte *runtime, const struct pcap_pkthdr *pcap_header, const WV_Byte *pcap_data) {
     WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
-    WV_ProcessPacket(packet, (void *)runtime);
+    WV_U8 status = WV_ProcessPacket(packet, (void *)runtime);
+    WV_ProfileRecord((void *)runtime, pcap_header->len, status);
 }
 
 int main(int argc, char *argv[]) {
@@ -27,9 +28,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    pcap_loop(pcap_packets, -1, proc, (void *)&runtime);
-
-    pcap_close(pcap_packets);
+    WV_ProfileStart(&runtime);
+    for (;;) {
+        pcap_loop(pcap_packets, -1, proc, (void *)&runtime);
+        pcap_close(pcap_packets);
+        pcap_packets = pcap_open_offline(pcap_filename, errbuf);
+    }
 
     if (WV_CleanRuntime(&runtime)) {
         fprintf(stderr, "runtime cleanup fail\n");
