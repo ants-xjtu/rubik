@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List
 if TYPE_CHECKING:
     from weaver.writer_context import ValueContext, InstrContext
     from weaver.header import ParseAction
+    from weaver.code import Reg
 
 
 class ValueWriter:
@@ -165,3 +166,20 @@ class ParseHeaderWriter(InstrWriter):
             else:
                 raise NotImplementedError()
         return text
+
+
+class CallWriter(InstrWriter):
+    def __init__(self, name: str, regs: List[Reg]):
+        super(CallWriter, self).__init__()
+        self.name = name
+        self.regs = regs
+
+    def write(self, context: InstrContext) -> str:
+        assert isinstance(context.instr, Command)
+        assert context.instr.provider == runtime
+        decl_core = f'WV_U8 {self.name}({", ".join(reg_aux[reg].type_decl() + f" _{i}" for i, reg in enumerate(self.regs))})'
+        context.recurse_context.global_context.append_call_decl(decl_core + ' ' + make_block("//"))
+        return (
+            f'{decl_core};\n'
+            f'{self.name}({", ".join(reg_aux.write(context, reg) for reg in self.regs)});'
+        )

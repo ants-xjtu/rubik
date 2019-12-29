@@ -14,7 +14,7 @@ class GlobalContext:
         self.next_table = next_table
         self.text = ''
         self.pre_text = ''
-        # self.decl_structs
+        self.call_decl = ''
 
     def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction],
                               inst_struct: Struct = None):
@@ -36,6 +36,11 @@ class GlobalContext:
             self.pre_text += '\n\n'
         self.pre_text += text_part
 
+    def append_call_decl(self, decl: str):
+        if self.call_decl:
+            self.call_decl += '\n\n'
+        self.call_decl += decl
+
     def write_all(self, global_entry: BasicBlock, table_count: int) -> str:
         decl_text = '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
                               not reg.abstract and not isinstance(reg, StructRegAux))
@@ -54,6 +59,12 @@ class GlobalContext:
             f'WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) {make_block(body_text)}'
         )
         return text
+
+    def write_template(self) -> str:
+        return (
+            '#include "weaver.h"\n\n' +
+            self.call_decl
+        )
 
 
 class BlockRecurseContext:

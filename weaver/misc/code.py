@@ -1,7 +1,7 @@
-from weaver.code.reg import *
 from weaver.code import *
 from weaver.writer import *
 from weaver.misc.header import *
+from weaver.code.reg import *
 from weaver.util import make_reg
 from typing import List
 
@@ -14,6 +14,7 @@ ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 eth = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
+    Command(runtime, 'Call', [Value([eth_type])], aux=CallWriter('check_eth_type', [eth_type])),
     If(Value([header_parser, eth_type], '{1} == WV_HToN16(0x0800)'), [
         # next_ip,
     ]),
