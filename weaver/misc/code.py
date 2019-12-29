@@ -16,7 +16,7 @@ eth = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(runtime, 'Call', [Value([eth_type])], aux=CallWriter('check_eth_type', [eth_type])),
     If(Value([header_parser, eth_type], '{1} == WV_HToN16(0x0800)'), [
-        # next_ip,
+        next_ip,
     ]),
 ]
 
@@ -25,23 +25,23 @@ psm_state = make_reg(1000, 1)
 psm_triggered = make_reg(2000, 1)
 psm_trans = make_reg(2001, 2)
 
-saddr = Value([header_parser], 'header->saddr')
-daddr = Value([header_parser], 'header->daddr')
+saddr = Value([header_parser, ip_src], '{1}')
+daddr = Value([header_parser, ip_dst], '{1}')
 DUMP = Value([], '0')
 FRAG = Value([], '1')
 dump = Value([], '0')
 frag = Value([], '1')
 last = Value([], '2')
 more = Value([], '3')
-dont_frag = Value([header_parser], 'header->dont_frag')
-more_frag = Value([header_parser], 'header->more_frag')
+dont_frag = Value([header_parser, ip_dont_frag], '{1}')
+more_frag = Value([header_parser, ip_more_frag], '{1}')
 seen_dont_frag = make_reg(1001, 1)
-next_tcp = Command(runtime, 'Next', [], opt_target=True)
+next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 ip = [
-    Command(header_parser, 'Parse', []),
-    Command(instance_table, 'Prefetch', [saddr, daddr]),
-    If(AggValue([Value([instance_table]), saddr, daddr], 'InstExist({1}, {2})', InstExistWriter()), [
-        Command(instance_table, 'Fetch', [saddr, daddr], aux=GetInstWriter('Fetch')),
+    Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
+    Command(instance_table, 'Prefetch', [saddr, daddr], aux=GetInstWriter('Prefetch')),
+    If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
+        Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
         SetValue(psm_state, Value([instance_table], 'inst->state', InstValueWriter('state'))),
         SetValue(seen_dont_frag, Value([instance_table], 'inst->seen_dont_frag', InstValueWriter('seen_dont_frag'))),
     ], [
@@ -98,8 +98,8 @@ ip = [
     Command(instance_table, 'Set{seen_dont_frag}', [Value([seen_dont_frag], '{0}')],
             aux=SetInstValueWriter('seen_dont_frag')),
     If(EqualTest(psm_state, DUMP), [
-        If(AggValue([Value([header_parser], 'header->protocol'), Value([], '6')], '{0} == {1}'), [
-            next_tcp,
+        If(AggValue([Value([header_parser, ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
+            # next_tcp,
         ]),
         Command(instance_table, 'Destroy', [], opt_target=True, aux=DestroyInstWriter()),
     ])

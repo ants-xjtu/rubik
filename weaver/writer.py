@@ -76,18 +76,23 @@ class InstrWriter:
 
 class InstExistWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return f'WV_InstExist(&runtime->tables[{context.instr_context.recurse_context.layer_id}], ...)'
+        return f'layer{context.instr_context.recurse_context.layer_id}_inst'
 
 
 class GetInstWriter(InstrWriter):
     def __init__(self, method: str):
         super().__init__()
-        assert method in {'Create', 'Fetch'}
+        assert method in {'Create', 'Prefetch'}
         self.method = method
 
     def write(self, context: InstrContext) -> str:
         layer_id = context.recurse_context.layer_id
         return f'layer{layer_id}_inst = WV_{self.method}Inst(&runtime->tables[{layer_id}], ...);'
+
+
+class FetchInstWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        return '// fetch placeholder'
 
 
 class SetInstValueWriter(InstrWriter):

@@ -20,20 +20,20 @@ class GlobalContext:
                               inst_struct: Struct = None):
         context = BlockRecurseContext(self, entry_block, layer_id, header_actions)
         if inst_struct is not None:
-            self.pre_text += f'Layer{layer_id}_Inst *layer{layer_id}_inst, *layer{layer_id}_prefetch_inst;\n'
-        self.pre_text += f'WV_ByteSlice layer{layer_id}_content;'
+            self.append_pre_text( f'Layer{layer_id}_Inst *layer{layer_id}_inst = NULL;\n')
+        self.append_pre_text(f'WV_ByteSlice layer{layer_id}_content;')
         context.execute_header_action()
         for block in entry_block.recurse():
             context.execute_block(block)
 
     def append_text(self, text_part: str):
         if self.text:
-            self.text += '\n\n'
+            self.text += '\n'
         self.text += text_part
 
     def append_pre_text(self, text_part: str):
         if self.pre_text:
-            self.pre_text += '\n\n'
+            self.pre_text += '\n'
         self.pre_text += text_part
 
     def append_call_decl(self, decl: str):

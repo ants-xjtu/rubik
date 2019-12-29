@@ -10,8 +10,8 @@ class Struct:
 
     def __init__(self, regs: List[Reg]):
         assert all(isinstance(reg_aux[reg], StructRegAux) for reg in regs)
-        self.struct_id = self.count
-        self.count += 1
+        self.struct_id = Struct.count
+        Struct.count += 1
         self.regs = regs
         self.byte_length = Struct.calculate_length(regs)
 
