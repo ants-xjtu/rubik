@@ -49,7 +49,7 @@ WV_U8 WV_ProfileRecord(WV_Runtime *runtime, WV_U32 byte_length, WV_U8 status) {
 
     profile->interval_byte_count = 0;
     profile->interval_packet_count = 0;
-    profile->next_checkpoint_sec += 1;
+    profile->next_checkpoint_sec = (WV_U32)current + 2;
     profile->last_record_sec = current;
     return 0;
 }

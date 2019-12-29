@@ -1,11 +1,17 @@
 #include <stdio.h>
 #include <signal.h>
 #include <pcap.h>
+#include <stdlib.h>
 #include "weaver.h"
 
 WV_U8 ctrl_c = 0;
 
 void ctrl_c_handler(int sig) {
+    if (ctrl_c) {
+        printf("shut down badly\n");
+        exit(1);
+    }
+    printf("\nwill shut down (ctrl-c again to kill)\n");
     ctrl_c = 1;
 }
 
@@ -62,7 +68,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("\nshut down\n");
+    printf("shut down correctly\n");
 
     return 0;
 }
