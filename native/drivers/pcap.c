@@ -24,7 +24,7 @@ void proc(WV_Byte *user, const struct pcap_pkthdr *pcap_header, const WV_Byte *p
     WV_Runtime *runtime = ((PcapUser *)user)->runtime;
     WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
     WV_U8 status = WV_ProcessPacket(packet, runtime);
-    WV_ProfileRecord(runtime, pcap_header->len, status);
+    WV_ProfileRecord(&runtime->profile, pcap_header->len, status);
     if (ctrl_c) {
         pcap_breakloop(((PcapUser *)user)->pcap);
     }
@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
     PcapUser user = { .runtime = &runtime, .pcap = pcap_packets };
 
     signal(SIGINT, ctrl_c_handler);
-    WV_ProfileStart(&runtime);
+    WV_ProfileStart(&runtime.profile);
     for (;;) {
         pcap_loop(pcap_packets, -1, proc, (void *)&user);
         if (ctrl_c) {

@@ -134,7 +134,6 @@ class SeqAssembleWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
         assert context.recurse_context.inst_struct is not None
-        layer_id = context.recurse_context.layer_id
         return f'{context.recurse_context.content_name()} = WV_SeqAssemble(&{context.recurse_context.inst_struct.name()}->seq);'
 
 
