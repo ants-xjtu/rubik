@@ -79,7 +79,7 @@ class BlockRecurseContext:
         structs_decl = []
 
         def execute_struct(s: Struct, extra: List[str] = None):
-            fields = [reg_aux.decl(reg) for reg in s.regs] + (extra or [])
+            fields = (extra or []) + [reg_aux.decl(reg) for reg in s.regs]
             structs_decl.append("struct " + make_block('\n'.join(fields)) + f' *{s.name()};')
             self.struct_regs_owner.update({reg: s for reg in s.regs})
 
@@ -90,7 +90,7 @@ class BlockRecurseContext:
             assert self.inst_struct is not None
             execute_struct(self.key_struct)
             # TODO
-            execute_struct(self.inst_struct, extra=['WV_U32 seq;'])
+            execute_struct(self.inst_struct, extra=['WV_INST_EXTRA_DECL', 'WV_U32 seq;'])
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):
@@ -108,6 +108,10 @@ class BlockRecurseContext:
 
     def content_name(self) -> str:
         return f'c{self.layer_id}'
+
+    def instance_key(self) -> str:
+        key_name = self.key_struct.name()
+        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *){key_name}, .length = sizeof(*{key_name}) }}'
 
 
 class InstrContext:

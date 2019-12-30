@@ -41,13 +41,13 @@ payload = make_reg(2003)
 next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 ip: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
-    Command(instance_table, 'Prefetch', [saddr, daddr], aux=GetInstWriter('Prefetch')),
+    Command(instance_table, 'Prefetch', [saddr, daddr], aux=PrefetchInstWriter()),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
         SetValue(psm_state, Value([instance_table, header.ip_state], '{1}')),
         SetValue(seen_dont_frag, Value([instance_table, header.ip_seen_dont_frag], '{1}')),
     ], [
-           Command(instance_table, 'Create', [saddr, daddr], opt_target=True, aux=GetInstWriter('Create')),
+           Command(instance_table, 'Create', [saddr, daddr], opt_target=True, aux=CreateInstWriter()),
            SetValue(psm_state, DUMP),
            SetValue(seen_dont_frag, no),
        ]),

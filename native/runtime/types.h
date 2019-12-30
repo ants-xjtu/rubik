@@ -10,6 +10,7 @@ typedef uint16_t WV_U16;
 typedef uint32_t WV_U32;
 typedef uint64_t WV_U64;
 typedef double WV_F;
+typedef void *WV_Any;
 
 static inline WV_U16 WV_HToN16(WV_U16 x) {
     return htons(x);

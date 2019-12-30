@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "table.h"
 #include <stdlib.h>
 
 WV_U8 WV_InitRuntime(WV_Runtime *runtime) {
@@ -7,15 +8,15 @@ WV_U8 WV_InitRuntime(WV_Runtime *runtime) {
         return 1;
     }
     for (WV_U8 i = 0; i < WV_CONFIG_TABLE_COUNT; i += 1) {
-        tommy_hashdyn_init(&runtime->tables[i]);
+        WV_InitTable(&runtime->tables[i], i);
     }
     return 0;
 }
 
 WV_U8 WV_CleanRuntime(WV_Runtime *runtime) {
     for (WV_U8 i = 0; i < WV_CONFIG_TABLE_COUNT; i += 1) {
-        tommy_hashdyn_foreach(&runtime->tables[i], free);
-        tommy_hashdyn_done(&runtime->tables[i]);
+        WV_CleanTable(&runtime->tables[i]);
     }
+    free(runtime->tables);
     return 0;
 }

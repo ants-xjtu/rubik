@@ -70,17 +70,27 @@ class InstExistWriter(ValueWriter):
         return context.instr_context.recurse_context.inst_struct.name()
 
 
-class GetInstWriter(InstrWriter):
-    def __init__(self, method: str):
-        super().__init__()
-        assert method in {'Create', 'Prefetch'}
-        self.method = method
-
+class PrefetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
-        layer_id = context.recurse_context.layer_id
-        # TODO
-        return f'{context.recurse_context.inst_struct.name()} = WV_{self.method}Inst(&runtime->tables[{layer_id}]);'
+        assert isinstance(context.instr, Command)
+        assert len(context.instr.args) == len(context.recurse_context.key_struct.regs)
+        text_lines = []
+        for reg, arg in zip(context.recurse_context.key_struct.regs, context.instr.args):
+            text_lines.append(context.write_instr(SetValue(reg, arg)))
+        text_lines.append(
+            f'{context.recurse_context.inst_struct.name()} = WV_PrefetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
+        )
+        return '\n'.join(text_lines)
+
+
+class CreateInstWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
+        assert isinstance(context.instr, Command)
+        assert len(context.instr.args) == len(context.recurse_context.key_struct.regs)
+        inst_name = context.recurse_context.inst_struct.name()
+        return f'{inst_name} = WV_CreateInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()}, sizeof(*{inst_name}));'
 
 
 class FetchInstWriter(InstrWriter):
@@ -141,8 +151,7 @@ class DestroyInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
-        # TODO
-        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}]);'
+        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
 
 
 class NextWriter(InstrWriter):
