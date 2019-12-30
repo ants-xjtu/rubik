@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import List, TYPE_CHECKING
 from weaver.header import Struct, LocateStruct
 from weaver.auxiliary import StructRegAux, reg_aux

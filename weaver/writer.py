@@ -51,17 +51,17 @@ class InstrWriter:
             text += make_block('\n'.join(context.write_instr(instr) for instr in context.instr.no))
             return text
         elif isinstance(context.instr, SetValue):
-            # assert not isinstance(context.instr, Command)
-            if isinstance(context.instr, Command):
-                return '<placeholder>'
+            assert not isinstance(context.instr, Command)
+            # if isinstance(context.instr, Command):
+            #     return '<placeholder>'
             # # only registers that has been set value will be declared
             # # this may help find bugs related to use-before-assignment bugs
             # context.recurse_context.global_context.decl_regs.add(context.instr.reg)
             text = f'{reg_aux.write(context, context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
             return text
         else:
-            # assert False, 'should call `write` on subclasses'
-            return '<placeholder>'
+            assert False, 'should call `write` on subclasses'
+            # return '<placeholder>'
 
 
 class InstExistWriter(ValueWriter):
@@ -79,7 +79,8 @@ class GetInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
         layer_id = context.recurse_context.layer_id
-        return f'{context.recurse_context.inst_struct.name()} = WV_{self.method}Inst(&runtime->tables[{layer_id}], ...);'
+        # TODO
+        return f'{context.recurse_context.inst_struct.name()} = WV_{self.method}Inst(&runtime->tables[{layer_id}]);'
 
 
 class FetchInstWriter(InstrWriter):
@@ -105,8 +106,9 @@ class InsertMetaWriter(InstrWriter):
         assert context.instr.provider == sequence
         assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
+        assert context.recurse_context.inst_struct is not None
         offset, length = context.instr.args[1], context.instr.args[2]
-        return f'WV_InsertMeta(&layer{context.recurse_context.layer_id}_inst->seq, {context.write_value(offset)}, {context.write_value(length)});'
+        return f'WV_InsertMeta(&{context.recurse_context.inst_struct.name()}->seq, {context.write_value(offset)}, {context.write_value(length)});'
 
 
 class InsertDataWriter(InstrWriter):
@@ -115,37 +117,48 @@ class InsertDataWriter(InstrWriter):
         assert context.instr.provider == sequence
         assert len(context.instr.args) == 2
         assert instance_table in context.instr.args[0].regs
+        assert context.recurse_context.inst_struct is not None
         data = context.instr.args[1]
-        return f'WV_InsertData(&layer{context.recurse_context.layer_id}_inst->seq, {context.write_value(data)});'
+        return f'WV_InsertData(&{context.recurse_context.inst_struct.name()}->seq, {context.write_value(data)});'
 
 
 class SeqReadyWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         assert sequence in context.value.regs
-        return f'WV_SeqReady(&layer{context.instr_context.recurse_context.layer_id}_inst->seq)'
+        assert context.instr_context.recurse_context.inst_struct is not None
+        return f'WV_SeqReady(&{context.instr_context.recurse_context.inst_struct.name()}->seq)'
 
 
 class SeqAssembleWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
+        assert context.recurse_context.inst_struct is not None
         layer_id = context.recurse_context.layer_id
-        return f'layer{layer_id}_content = WV_SeqAssemble(&layer{layer_id}_inst->seq);'
+        return f'{context.recurse_context.content_name()} = WV_SeqAssemble(&{context.recurse_context.inst_struct.name()}->seq);'
 
 
 class DestroyInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
-        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}], ...);'
+        # TODO
+        return f'WV_DestroyInst(&runtime->tables[{context.recurse_context.layer_id}]);'
 
 
 class NextWriter(InstrWriter):
+    def __init__(self, content: bool = False):
+        super(NextWriter, self).__init__()
+        self.content = content
+
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
-        return f'goto L{next_entry}; L{next_entry}_Ret:'
+        return (
+            ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
+            f'goto L{next_entry}; L{next_entry}_Ret:'
+        )
 
 
 class ParseHeaderWriter(InstrWriter):
@@ -157,8 +170,10 @@ class ParseHeaderWriter(InstrWriter):
     def write_actions(self, actions: List[ParseAction]) -> str:
         text = ''
         for action in actions:
+            for struct in action.iterate_structs():
+                text += f'{struct.name()} = NULL;\n'
             if isinstance(action, LocateStruct):
-                text += f'_h{action.struct.struct_id} = (void *)current.cursor;\n'
+                text += f'{action.struct.name()} = (void *)current.cursor;\n'
                 text += f'current = WV_SliceAfter(current, {action.struct.byte_length});'
             else:
                 raise NotImplementedError()
@@ -180,3 +195,8 @@ class CallWriter(InstrWriter):
             f'{decl_core};\n'
             f'{self.name}({", ".join(reg_aux.write(context, reg) for reg in self.regs)});'
         )
+
+
+class PayloadWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return 'current'

@@ -19,7 +19,7 @@ class GlobalContext:
     def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction],
                               key_struct: Struct = None, inst_struct: Struct = None):
         context = BlockRecurseContext(self, entry_block, layer_id, header_actions, key_struct, inst_struct)
-        self.append_pre_text(f'WV_ByteSlice layer{layer_id}_content;')
+        self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
             context.execute_block(block)
@@ -78,9 +78,9 @@ class BlockRecurseContext:
     def execute_header_action(self):
         structs_decl = []
 
-        def execute_struct(s: Struct):
-            structs_decl.append("struct " + make_block(
-                '\n'.join(reg_aux.decl(reg) for reg in s.regs)) + f' *{s.name()};')
+        def execute_struct(s: Struct, extra: List[str] = None):
+            fields = [reg_aux.decl(reg) for reg in s.regs] + (extra or [])
+            structs_decl.append("struct " + make_block('\n'.join(fields)) + f' *{s.name()};')
             self.struct_regs_owner.update({reg: s for reg in s.regs})
 
         for action in self.actions:
@@ -89,7 +89,8 @@ class BlockRecurseContext:
         if self.key_struct is not None:
             assert self.inst_struct is not None
             execute_struct(self.key_struct)
-            execute_struct(self.inst_struct)
+            # TODO
+            execute_struct(self.inst_struct, extra=['WV_U32 seq;'])
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):
@@ -104,6 +105,9 @@ class BlockRecurseContext:
         else:
             codes_text += f'goto L{self.entry_block.block_id}_Ret;'
         self.global_context.append_text(text + make_block(codes_text))
+
+    def content_name(self) -> str:
+        return f'c{self.layer_id}'
 
 
 class InstrContext:
