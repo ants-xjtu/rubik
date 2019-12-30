@@ -3,9 +3,10 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 from weaver.writer import ValueWriter, InstrWriter
 from weaver.auxiliary import reg_aux, StructRegAux
 from weaver.util import make_block
+from weaver.code import Instr
 
 if TYPE_CHECKING:
-    from weaver.code import Instr, BasicBlock, Value, Reg
+    from weaver.code import BasicBlock, Value, Reg
     from weaver.header import ParseAction, Struct
 
 
@@ -101,7 +102,7 @@ class BlockRecurseContext:
             codes_text += '\n'
         if block.cond is not None:
             assert block.yes_block is not None and block.no_block is not None
-            codes_text += f'if ({InstrContext(self, block, None).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
+            codes_text += f'if ({InstrContext(self, block, Instr([], [], None)).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
         else:
             codes_text += f'goto L{self.entry_block.block_id}_Ret;'
         self.global_context.append_text(text + make_block(codes_text))
@@ -110,6 +111,7 @@ class BlockRecurseContext:
         return f'c{self.layer_id}'
 
     def instance_key(self) -> str:
+        assert self.key_struct is not None
         key_name = self.key_struct.name()
         return f'(WV_ByteSlice){{ .cursor = (WV_Byte *){key_name}, .length = sizeof(*{key_name}) }}'
 

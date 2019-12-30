@@ -72,23 +72,25 @@ class InstExistWriter(ValueWriter):
 
 class PrefetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
-        assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
+        assert context.recurse_context.inst_struct is not None
+        assert context.recurse_context.key_struct is not None
         assert isinstance(context.instr, Command)
+        assert context.instr.provider == instance_table
         assert len(context.instr.args) == len(context.recurse_context.key_struct.regs)
         text_lines = []
         for reg, arg in zip(context.recurse_context.key_struct.regs, context.instr.args):
             text_lines.append(context.write_instr(SetValue(reg, arg)))
         text_lines.append(
-            f'{context.recurse_context.inst_struct.name()} = WV_PrefetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
+            f'{context.recurse_context.inst_struct.name()} = WV_FetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
         )
         return '\n'.join(text_lines)
 
 
 class CreateInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
-        assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
+        assert context.recurse_context.inst_struct is not None
         assert isinstance(context.instr, Command)
-        assert len(context.instr.args) == len(context.recurse_context.key_struct.regs)
+        assert context.instr.provider == instance_table
         inst_name = context.recurse_context.inst_struct.name()
         return f'{inst_name} = WV_CreateInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()}, sizeof(*{inst_name}));'
 
@@ -184,6 +186,7 @@ class ParseHeaderWriter(InstrWriter):
                 text += f'{action.struct.name()} = (void *)current.cursor;\n'
                 text += f'current = WV_SliceAfter(current, {action.struct.byte_length});'
             else:
+                # TODO
                 raise NotImplementedError()
         return text
 

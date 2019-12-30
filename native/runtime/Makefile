@@ -1,3 +1,5 @@
+LANG := en_US.ISO-8859-1
+
 all: libwvrt.a
 
 libwvrt.a: profile.o runtime.o tommyds/tommy.o
@@ -9,6 +11,16 @@ libwvrt.a: profile.o runtime.o tommyds/tommy.o
 runtime.o: table.h slice.h
 
 clean:
-	-$(RM) libwvrt.a *.o *.gch
+	-$(RM) libwvrt.a
+	-$(RM) *.o *.gch
+	-$(RM) test_table
 
-.PHONY: all clean
+tests_exe: test_table
+
+test_%: tests/%.c libwvrt.a
+	$(CC) -o $@ -g $^ -I.
+
+test: tests_exe
+	./test_table
+
+.PHONY: all clean test

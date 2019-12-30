@@ -47,7 +47,7 @@ ip: List[Instr] = [
         SetValue(psm_state, Value([instance_table, header.ip_state], '{1}')),
         SetValue(seen_dont_frag, Value([instance_table, header.ip_seen_dont_frag], '{1}')),
     ], [
-           Command(instance_table, 'Create', [saddr, daddr], opt_target=True, aux=CreateInstWriter()),
+           Command(instance_table, 'Create', [], opt_target=True, aux=CreateInstWriter()),
            SetValue(psm_state, DUMP),
            SetValue(seen_dont_frag, no),
        ]),
