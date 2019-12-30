@@ -5,6 +5,7 @@
 #include "runtime/types.h"
 #include "runtime/slice.h"
 #include "runtime/table.h"
+#include "runtime/seq.h"
 #include "runtime/profile.h"
 #include "runtime/runtime.h"
 

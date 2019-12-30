@@ -73,7 +73,7 @@ ip: List[ParseAction] = [
 ip_key = Struct([
     make_reg(20015, 4),
     make_reg(20016, 4),
-])
+], alloc=True)
 ip_state = 20017
 ip_seen_dont_frag = 20018
 ip_data = Struct([

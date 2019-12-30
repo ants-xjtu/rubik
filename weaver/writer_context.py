@@ -81,7 +81,7 @@ class BlockRecurseContext:
 
         def execute_struct(s: Struct, extra: List[str] = None):
             fields = (extra or []) + [reg_aux.decl(reg) for reg in s.regs]
-            structs_decl.append("struct " + make_block('\n'.join(fields)) + f' *{s.name()};')
+            structs_decl.append("struct " + make_block('\n'.join(fields)) + f' {("*", "")[s.alloc]}{s.name()};')
             self.struct_regs_owner.update({reg: s for reg in s.regs})
 
         for action in self.actions:
@@ -113,7 +113,7 @@ class BlockRecurseContext:
     def instance_key(self) -> str:
         assert self.key_struct is not None
         key_name = self.key_struct.name()
-        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *){key_name}, .length = sizeof(*{key_name}) }}'
+        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{key_name}, .length = sizeof({key_name}) }}'
 
 
 class InstrContext:

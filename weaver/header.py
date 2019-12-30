@@ -9,12 +9,13 @@ if TYPE_CHECKING:
 class Struct:
     count = 0
 
-    def __init__(self, regs: List[Reg]):
+    def __init__(self, regs: List[Reg], alloc: bool = False):
         # assert all(isinstance(reg_aux[reg], StructRegAux) for reg in regs)
         self.struct_id = Struct.count
         Struct.count += 1
         self.regs: List[Reg] = regs
         self.byte_length = Struct.calculate_length(regs)
+        self.alloc = alloc
 
     @staticmethod
     def calculate_length(regs: List[Reg]) -> int:
@@ -31,7 +32,7 @@ class Struct:
         return bit_length // 8
 
     def name(self) -> str:
-        return f'_h{self.struct_id}'
+        return f'_{("h", "r")[self.alloc]}{self.struct_id}'
 
 
 class ParseAction:
