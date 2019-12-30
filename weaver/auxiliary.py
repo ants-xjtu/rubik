@@ -15,17 +15,17 @@ class RegTable:
 
     count = 0
 
-    def __setitem__(self, reg: Reg, aux: 'RegAux'):
+    def __setitem__(self, reg: Reg, aux: RegAux):
         assert reg not in self.regs
         self.regs[reg] = aux
         self.count = max(self.count, reg + 1)
 
-    def alloc(self, aux: 'RegAux') -> int:
+    def alloc(self, aux: RegAux) -> int:
         reg_id = self.count
         self[reg_id] = aux
         return reg_id
 
-    def write(self, context: BlockRecurseContext, reg: Reg) -> str:
+    def write(self, context: InstrContext, reg: Reg) -> str:
         return self[reg].value_name(context, reg)
 
     def decl(self, reg: Reg) -> str:
@@ -65,7 +65,7 @@ class StructRegAux(RegAux):
         self.bit_len = bit_len
 
     def value_name(self, context: InstrContext, reg: Reg) -> str:
-        return f'_h{context.recurse_context.struct_regs_owner[reg].struct_id}->_{reg}'
+        return f'{context.recurse_context.struct_regs_owner[reg].name()}->_{reg}'
 
     def decl(self, reg: Reg) -> str:
         if self.bit_len is None:

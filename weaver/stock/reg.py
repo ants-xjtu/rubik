@@ -1,4 +1,4 @@
-from weaver.util import make_reg
+from weaver.stock import make_reg
 
 runtime = make_reg(0, None, True)
 header_parser = make_reg(100, None, True)

@@ -1,8 +1,9 @@
 from weaver.code import *
 from weaver.writer import *
-from weaver.misc.header import *
-from weaver.code.reg import *
-from weaver.util import make_reg
+from weaver.stock.header import eth_type, ip_src, ip_dst, ip_dont_frag, ip_more_frag, ip_state, ip_seen_dont_frag, \
+    ip_protocol
+from weaver.stock.reg import *
+from weaver.stock import make_reg
 from typing import List
 
 # common:
@@ -12,7 +13,7 @@ ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 
 # Ethernet protocol
 next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
-eth = [
+eth: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(runtime, 'Call', [Value([eth_type])], aux=CallWriter('check_eth_type', [eth_type])),
     If(Value([header_parser, eth_type], '{1} == WV_HToN16(0x0800)'), [
@@ -37,13 +38,13 @@ dont_frag = Value([header_parser, ip_dont_frag], '{1}')
 more_frag = Value([header_parser, ip_more_frag], '{1}')
 seen_dont_frag = make_reg(1001, 1)
 next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
-ip = [
+ip: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(instance_table, 'Prefetch', [saddr, daddr], aux=GetInstWriter('Prefetch')),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
-        SetValue(psm_state, Value([instance_table], 'inst->state', InstValueWriter('state'))),
-        SetValue(seen_dont_frag, Value([instance_table], 'inst->seen_dont_frag', InstValueWriter('seen_dont_frag'))),
+        SetValue(psm_state, Value([instance_table, ip_state], '{1}')),
+        SetValue(seen_dont_frag, Value([instance_table, ip_seen_dont_frag], '{1}')),
     ], [
            Command(instance_table, 'Create', [saddr, daddr], opt_target=True, aux=GetInstWriter('Create')),
            SetValue(psm_state, DUMP),
@@ -94,9 +95,9 @@ ip = [
     If(EqualTest(psm_state, DUMP), [
         Command(sequence, 'Assemble', [], opt_target=True, aux=SeqAssembleWriter()),
     ]),
-    Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')], aux=SetInstValueWriter('state')),
+    Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')], aux=SetInstValueWriter(ip_state)),
     Command(instance_table, 'Set{seen_dont_frag}', [Value([seen_dont_frag], '{0}')],
-            aux=SetInstValueWriter('seen_dont_frag')),
+            aux=SetInstValueWriter(ip_seen_dont_frag)),
     If(EqualTest(psm_state, DUMP), [
         If(AggValue([Value([header_parser, ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
             # next_tcp,
@@ -190,7 +191,7 @@ def to_rst(from_state: Value):
     ])
 
 
-tcp = [
+tcp: List[Instr] = [
     Command(header_parser, 'Parse', []),
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),

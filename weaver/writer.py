@@ -1,8 +1,7 @@
 from __future__ import annotations
-
 from weaver.auxiliary import reg_aux
 from weaver.code import AggValue, If, SetValue, Command
-from weaver.code.reg import instance_table, sequence, runtime, header_parser
+from weaver.stock.reg import instance_table, sequence, runtime, header_parser
 from weaver.util import make_block
 from weaver.header import LocateStruct
 from typing import TYPE_CHECKING, List
@@ -42,15 +41,6 @@ class AggValueWriter(ValueWriter):
         return self.cexpr_template.format(*values_text)
 
 
-class InstValueWriter(ValueWriter):
-    def __init__(self, key):
-        self.key = key
-
-    def write(self, context: ValueContext) -> str:
-        assert instance_table in context.value.regs
-        return f'layer{context.instr_context.recurse_context.layer_id}_inst->{self.key}'
-
-
 class InstrWriter:
     # fallback
     def write(self, context: InstrContext) -> str:
@@ -76,7 +66,8 @@ class InstrWriter:
 
 class InstExistWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return f'layer{context.instr_context.recurse_context.layer_id}_inst'
+        assert context.instr_context.recurse_context.inst_struct is not None
+        return context.instr_context.recurse_context.inst_struct.name()
 
 
 class GetInstWriter(InstrWriter):
@@ -86,8 +77,9 @@ class GetInstWriter(InstrWriter):
         self.method = method
 
     def write(self, context: InstrContext) -> str:
+        assert context.recurse_context.inst_struct is not None and context.recurse_context.key_struct is not None
         layer_id = context.recurse_context.layer_id
-        return f'layer{layer_id}_inst = WV_{self.method}Inst(&runtime->tables[{layer_id}], ...);'
+        return f'{context.recurse_context.inst_struct.name()} = WV_{self.method}Inst(&runtime->tables[{layer_id}], ...);'
 
 
 class FetchInstWriter(InstrWriter):
@@ -96,7 +88,7 @@ class FetchInstWriter(InstrWriter):
 
 
 class SetInstValueWriter(InstrWriter):
-    def __init__(self, key):
+    def __init__(self, key: Reg):
         super(SetInstValueWriter, self).__init__()
         self.key = key
 
@@ -104,7 +96,7 @@ class SetInstValueWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
         assert len(context.instr.args) == 1
-        return f'layer{context.recurse_context.layer_id}_inst->{self.key} = {context.write_value(context.instr.args[0])};'
+        return f'{reg_aux.write(context, self.key)} = {context.write_value(context.instr.args[0])};'
 
 
 class InsertMetaWriter(InstrWriter):
@@ -183,7 +175,7 @@ class CallWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
         decl_core = f'WV_U8 {self.name}({", ".join(reg_aux[reg].type_decl() + f" _{i}" for i, reg in enumerate(self.regs))})'
-        context.recurse_context.global_context.append_call_decl(decl_core + ' ' + make_block("//"))
+        context.recurse_context.global_context.insert_call_decl(self.name, decl_core + ' ' + make_block("//"))
         return (
             f'{decl_core};\n'
             f'{self.name}({", ".join(reg_aux.write(context, reg) for reg in self.regs)});'

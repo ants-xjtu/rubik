@@ -1,11 +1,11 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional
 from weaver.writer import ValueWriter, InstrWriter
 from weaver.auxiliary import reg_aux, StructRegAux
 from weaver.util import make_block
 
 if TYPE_CHECKING:
-    from weaver.code import Instr, BasicBlock, Value
+    from weaver.code import Instr, BasicBlock, Value, Reg
     from weaver.header import ParseAction, Struct
 
 
@@ -14,13 +14,11 @@ class GlobalContext:
         self.next_table = next_table
         self.text = ''
         self.pre_text = ''
-        self.call_decl = ''
+        self.call_decl: Dict[str, str] = {}
 
     def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction],
-                              inst_struct: Struct = None):
-        context = BlockRecurseContext(self, entry_block, layer_id, header_actions)
-        if inst_struct is not None:
-            self.append_pre_text( f'Layer{layer_id}_Inst *layer{layer_id}_inst = NULL;\n')
+                              key_struct: Struct = None, inst_struct: Struct = None):
+        context = BlockRecurseContext(self, entry_block, layer_id, header_actions, key_struct, inst_struct)
         self.append_pre_text(f'WV_ByteSlice layer{layer_id}_content;')
         context.execute_header_action()
         for block in entry_block.recurse():
@@ -36,10 +34,9 @@ class GlobalContext:
             self.pre_text += '\n'
         self.pre_text += text_part
 
-    def append_call_decl(self, decl: str):
-        if self.call_decl:
-            self.call_decl += '\n\n'
-        self.call_decl += decl
+    def insert_call_decl(self, name: str, decl: str):
+        assert name not in self.call_decl or decl == self.call_decl[name]
+        self.call_decl[name] = decl
 
     def write_all(self, global_entry: BasicBlock, table_count: int) -> str:
         decl_text = '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
@@ -63,26 +60,36 @@ class GlobalContext:
     def write_template(self) -> str:
         return (
             '#include "weaver.h"\n\n' +
-            self.call_decl
+            '\n'.join(self.call_decl.values())
         )
 
 
 class BlockRecurseContext:
     def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, layer_id: int,
-                 actions: List[ParseAction]):
+                 actions: List[ParseAction], key_struct: Optional[Struct], inst_struct: Optional[Struct]):
         self.global_context = global_context
         self.entry_block = entry_block
         self.layer_id = layer_id
         self.actions = actions
-        self.struct_regs_owner = {}
+        self.struct_regs_owner: Dict[Reg, Struct] = {}
+        self.key_struct = key_struct
+        self.inst_struct = inst_struct
 
     def execute_header_action(self):
         structs_decl = []
+
+        def execute_struct(s: Struct):
+            structs_decl.append("struct " + make_block(
+                '\n'.join(reg_aux.decl(reg) for reg in s.regs)) + f' *{s.name()};')
+            self.struct_regs_owner.update({reg: s for reg in s.regs})
+
         for action in self.actions:
             for struct in action.iterate_structs():
-                structs_decl.append("struct " + make_block(
-                    '\n'.join(reg_aux.decl(reg) for reg in struct.regs)) + f' *_h{struct.struct_id};')
-                self.struct_regs_owner.update({reg: struct for reg in struct.regs})
+                execute_struct(struct)
+        if self.key_struct is not None:
+            assert self.inst_struct is not None
+            execute_struct(self.key_struct)
+            execute_struct(self.inst_struct)
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):
@@ -92,6 +99,7 @@ class BlockRecurseContext:
         if codes_text:
             codes_text += '\n'
         if block.cond is not None:
+            assert block.yes_block is not None and block.no_block is not None
             codes_text += f'if ({InstrContext(self, block, None).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
         else:
             codes_text += f'goto L{self.entry_block.block_id}_Ret;'

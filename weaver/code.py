@@ -5,8 +5,8 @@ from weaver.util import make_block
 if TYPE_CHECKING:
     from weaver.writer import ValueWriter, InstrWriter
 
-Reg = NewType('Reg', int)
-Env = NewType('Env', Dict[Reg, Any])
+Reg = int
+Env = Dict[Reg, Any]
 
 
 class Instr:
@@ -20,7 +20,7 @@ class Instr:
 
 
 class SetValue(Instr):
-    def __init__(self, reg: Reg, value: 'Value', aux: InstrWriter = None):
+    def __init__(self, reg: Reg, value: Value, aux: InstrWriter = None):
         super(SetValue, self).__init__(value.regs, [reg], aux)
         self.reg = reg
         self.value = value
@@ -36,7 +36,7 @@ class SetValue(Instr):
 
 
 class Command(SetValue):
-    def __init__(self, provider: Reg, name: str, args: List['Value'], opt_target: bool = False,
+    def __init__(self, provider: Reg, name: str, args: List[Value], opt_target: bool = False,
                  aux: InstrWriter = None):
         super(Command, self).__init__(provider, AggValue(args), aux)
         self.provider = provider
@@ -53,7 +53,7 @@ class Command(SetValue):
 
 
 class If(Instr):
-    def __init__(self, cond: 'Value', yes: List[Instr], no: List[Instr] = None):
+    def __init__(self, cond: Value, yes: List[Instr], no: List[Instr] = None):
         self.cond = cond
         self.yes = yes
         self.no = no or []
@@ -91,7 +91,7 @@ class If(Instr):
 
 
 class Choice(If):
-    def __init__(self, cond: 'Value', yes: List[Instr], no: List[Instr]):
+    def __init__(self, cond: Value, yes: List[Instr], no: List[Instr]):
         super().__init__(cond, yes, no)
 
     def __str__(self):
@@ -109,7 +109,7 @@ class Value:
     def __str__(self):
         return self.eval_template.format(*(f'${reg}' for reg in self.regs))
 
-    def try_eval(self, consts: Env) -> Optional[int]:
+    def try_eval(self, consts: Env) -> Optional[Any]:
         reg_values = []
         for reg in self.regs:
             if reg not in consts:
@@ -127,7 +127,7 @@ class AggValue(Value):
     def __str__(self):
         return self.agg_eval.format(*(str(value) for value in self.values))
 
-    def try_eval(self, consts: Env) -> Optional[int]:
+    def try_eval(self, consts: Env) -> Optional[Any]:
         evaluated = []
         for value in self.values:
             result = value.try_eval(consts)
@@ -148,8 +148,8 @@ class BasicBlock:
     count = 0
 
     def __init__(self, codes: List[Instr] = None, cond: Value = None,
-                 yes_block: 'BasicBlock' = None,
-                 no_block: 'BasicBlock' = None):
+                 yes_block: BasicBlock = None,
+                 no_block: BasicBlock = None):
         self.codes = codes or []
         if cond is None:
             assert yes_block is None and no_block is None
@@ -234,14 +234,15 @@ class BasicBlock:
                     for dep_instr in dep_graph[instr]:
                         choice_instr[dep_instr] = True
                 scanned[i] = instr
-        return scanned, choice
+        assert all(instr is not None for instr in scanned)
+        return cast(List[Instr], scanned), choice
 
     @staticmethod
-    def from_codes(codes: List[Instr]) -> 'BasicBlock':
+    def from_codes(codes: List[Instr]) -> BasicBlock:
         scanned, _ = BasicBlock.scan_codes(codes)
         return BasicBlock(scanned)
 
-    def eval_reduce(self, consts: Env = None) -> 'BasicBlock':
+    def eval_reduce(self, consts: Env = None) -> BasicBlock:
         consts = cast(Env, consts or {})
         affected_consts = dict(consts)
         for i, instr in enumerate(self.codes):
@@ -267,9 +268,10 @@ class BasicBlock:
             affected_consts = instr.affect(affected_consts)
         if self.cond is None:
             return self
+        assert self.yes_block is not None and self.no_block is not None
         cond_value = self.cond.try_eval(affected_consts)
         if cond_value is not None:
-            if cond_value == 0:
+            if bool(cond_value):
                 selected_block = self.no_block.eval_reduce(affected_consts)
             else:
                 selected_block = self.yes_block.eval_reduce(affected_consts)
@@ -298,9 +300,10 @@ class BasicBlock:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
 
-    def recurse(self) -> Generator['BasicBlock', None, None]:
+    def recurse(self) -> Generator[BasicBlock, None, None]:
         yield self
         if self.cond is not None:
+            assert self.yes_block is not None and self.no_block is not None
             yield from self.yes_block.recurse()
             yield from self.no_block.recurse()
 
@@ -314,8 +317,8 @@ class BasicBlock:
         fixed = [False] * len(self.codes)
         assert self.cond is not None
         read_regs = set(self.cond.regs)
-        write_regs = set()
-        command_write = set()
+        write_regs: Set[Reg] = set()
+        command_write: Set[Reg] = set()
         for i in (j - 1 for j in range(len(self.codes), 0, -1)):
             instr = self.codes[i]
             instr_read = set(instr.read_regs)
@@ -335,9 +338,10 @@ class BasicBlock:
             #         write_regs.discard(instr.reg)
         return fixed
 
-    def relocate_cond(self) -> 'BasicBlock':
+    def relocate_cond(self) -> BasicBlock:
         if self.cond is None:
             return self
+        assert self.yes_block is not None and self.no_block is not None
 
         try:
             fixed = self.build_fixed()
@@ -373,7 +377,7 @@ class BasicBlock:
             return self
         return BasicBlock(fixed_codes, self.cond, yes_block, no_block)
 
-    def optimize(self) -> 'BasicBlock':
+    def optimize(self) -> BasicBlock:
         block = self
         while True:
             opt_block = block.eval_reduce().relocate_cond()
