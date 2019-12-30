@@ -1,5 +1,7 @@
 # Weaver
 
+![](https://github.com/sgdxbc/weaver/workflows/build/badge.svg)
+
 First, run
 
 ```

@@ -32,6 +32,4 @@ jobs:
         mypy -p weaver
     - name: Run native tests
       run: |
-        sudo apt update
-        sudo apt install -y build-essential
         make -C native/runtime test
