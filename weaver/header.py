@@ -32,7 +32,7 @@ class Struct:
         return bit_length // 8
 
     def name(self) -> str:
-        return f'_{("h", "r")[self.alloc]}{self.struct_id}'
+        return f'_h{self.struct_id}'
 
 
 class ParseAction:

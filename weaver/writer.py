@@ -67,7 +67,7 @@ class InstrWriter:
 class InstExistWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         assert context.instr_context.recurse_context.inst_struct is not None
-        return context.instr_context.recurse_context.inst_struct.name()
+        return context.instr_context.recurse_context.prefetch_name()
 
 
 class PrefetchInstWriter(InstrWriter):
@@ -81,7 +81,7 @@ class PrefetchInstWriter(InstrWriter):
         for reg, arg in zip(context.recurse_context.key_struct.regs, context.instr.args):
             text_lines.append(context.write_instr(SetValue(reg, arg)))
         text_lines.append(
-            f'{context.recurse_context.inst_struct.name()} = WV_FetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
+            f'{context.recurse_context.prefetch_name()} = WV_FetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
         )
         return '\n'.join(text_lines)
 
@@ -97,7 +97,8 @@ class CreateInstWriter(InstrWriter):
 
 class FetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
-        return '// fetch placeholder'
+        assert context.recurse_context.inst_struct is not None
+        return f'{context.recurse_context.inst_struct.name()} = {context.recurse_context.prefetch_name()};'
 
 
 class SetInstValueWriter(InstrWriter):

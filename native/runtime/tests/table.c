@@ -7,7 +7,7 @@ typedef struct Key {
 } Key;
 
 typedef struct Value {
-    WV_INST_EXTRA_DECL
+    WV_INST_EXTRA_DECL(sizeof(Key))
     WV_U64 x;
 } Value;
 
@@ -18,10 +18,12 @@ int main(void) {
     {
         WV_ByteSlice k1 = { .cursor = (WV_Byte *)&(Key){ .a = 0, .b = 0 }, .length = sizeof(Key) };
         assert(WV_FetchInst(&table, k1) == NULL);
-        Value *v1 = WV_CreateInst(&table, k1, sizeof(Value));
+        WV_InstHeader(sizeof(k1)) *f1 = WV_CreateInst(&table, k1, sizeof(Value));
+        assert(f1 != NULL);
+        Value *v1 = (WV_Any)f1;
         v1->x = 0;
-        Value *v2 = WV_FetchInst(&table, k1);
-        assert(v2 == v1);
+        WV_InstHeader(sizeof(k1)) *f2 = WV_FetchInst(&table, k1);
+        assert((WV_Any)f2 == (WV_Any)f1);
         WV_DestroyInst(&table, k1);
         assert(WV_FetchInst(&table, k1) == NULL);
     }

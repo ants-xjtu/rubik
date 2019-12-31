@@ -21,6 +21,7 @@ class GlobalContext:
                               key_struct: Struct = None, inst_struct: Struct = None):
         context = BlockRecurseContext(self, entry_block, layer_id, header_actions, key_struct, inst_struct)
         self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
+        self.append_pre_text(f'WV_Any {context.prefetch_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
             context.execute_block(block)
@@ -81,7 +82,11 @@ class BlockRecurseContext:
 
         def execute_struct(s: Struct, extra: List[str] = None):
             fields = (extra or []) + [reg_aux.decl(reg) for reg in s.regs]
-            structs_decl.append("struct " + make_block('\n'.join(fields)) + f' {("*", "")[s.alloc]}{s.name()};')
+            if s.alloc:
+                tail_text = f'{s.name()}_alloc, *{s.name()};\n{s.name()} = &{s.name()}_alloc;'
+            else:
+                tail_text = f'*{s.name()};'
+            structs_decl.append("struct " + make_block('\n'.join(fields)) + ' ' + tail_text)
             self.struct_regs_owner.update({reg: s for reg in s.regs})
 
         for action in self.actions:
@@ -91,7 +96,7 @@ class BlockRecurseContext:
             assert self.inst_struct is not None
             execute_struct(self.key_struct)
             # TODO
-            execute_struct(self.inst_struct, extra=['WV_INST_EXTRA_DECL', 'WV_U32 seq;'])
+            execute_struct(self.inst_struct, extra=[f'WV_INST_EXTRA_DECL(sizeof({self.key_struct.name()}))'])
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):
@@ -110,10 +115,13 @@ class BlockRecurseContext:
     def content_name(self) -> str:
         return f'c{self.layer_id}'
 
+    def prefetch_name(self) -> str:
+        return f'f{self.layer_id}'
+
     def instance_key(self) -> str:
         assert self.key_struct is not None
         key_name = self.key_struct.name()
-        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{key_name}, .length = sizeof({key_name}) }}'
+        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{key_name}, .length = sizeof(*{key_name}) }}'
 
 
 class InstrContext:
