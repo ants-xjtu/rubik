@@ -48,7 +48,7 @@ static inline WV_U8 WV_CleanTable(WV_Table *table) {
     return 0;
 }
 
-static inline WV_Any WV_FetchInst(WV_Table *table, WV_ByteSlice key) {
+static inline WV_Any WV_FetchInstHeader(WV_Table *table, WV_ByteSlice key) {
     return tommy_hashdyn_search(&table->tommy, is_equal, &key, tommy_hash(0, key.cursor, (tommy_size_t)key.length));
 }
 

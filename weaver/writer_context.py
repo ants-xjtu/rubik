@@ -21,7 +21,6 @@ class GlobalContext:
                               key_struct: Struct = None, inst_struct: Struct = None):
         context = BlockRecurseContext(self, entry_block, layer_id, header_actions, key_struct, inst_struct)
         self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
-        self.append_pre_text(f'WV_Any {context.prefetch_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
             context.execute_block(block)
@@ -92,11 +91,12 @@ class BlockRecurseContext:
         for action in self.actions:
             for struct in action.iterate_structs():
                 execute_struct(struct)
+        # TODO: BiInst
         if self.key_struct is not None:
             assert self.inst_struct is not None
             execute_struct(self.key_struct)
-            # TODO
-            execute_struct(self.inst_struct, extra=[f'WV_INST_EXTRA_DECL(sizeof({self.key_struct.name()}))'])
+            execute_struct(self.inst_struct, extra=[f'WV_INST_EXTRA_DECL({self.key_struct.sizeof()})'])
+            structs_decl.append(f"WV_InstHeader({self.key_struct.sizeof()}) *{self.prefetch_name()};")
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):
@@ -120,8 +120,7 @@ class BlockRecurseContext:
 
     def instance_key(self) -> str:
         assert self.key_struct is not None
-        key_name = self.key_struct.name()
-        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{key_name}, .length = sizeof(*{key_name}) }}'
+        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{self.key_struct.name()}, .length = {self.key_struct.sizeof()} }}'
 
 
 class InstrContext:

@@ -36,12 +36,12 @@ int main(void) {
         k2->c = 2;
         k2->d = 3;
         WV_ByteSlice key = { .cursor = (WV_Byte *)k, .length = sizeof(*k) };
-        assert(WV_FetchInst(&table, key) == NULL);
+        assert(WV_FetchInstHeader(&table, key) == NULL);
         WV_ByteSlice half_key1 = { .cursor = (WV_Byte *)k1, .length = sizeof(*k1) };
         WV_ByteSlice half_key2 = { .cursor = (WV_Byte *)k2, .length = sizeof(*k2) };
         v = WV_CreateBiInst(&table, half_key1, half_key2, sizeof(*v));
         v->x = 1;
-        WV_BiInstHeader(sizeof(*k)) *h = WV_FetchInst(&table, key);
+        WV_BiInstHeader(sizeof(*k)) *h = WV_FetchInstHeader(&table, key);
         assert(h != NULL);
         assert(h->reverse == 0);
         v = WV_InstData(h, sizeof(*k));
@@ -52,21 +52,21 @@ int main(void) {
         k1->b = 3;
         k2->c = 0;
         k2->d = 1;
-        h = WV_FetchInst(&table, key);
+        h = WV_FetchInstHeader(&table, key);
         assert(h != NULL);
         assert(h->reverse == 1);
         v = WV_InstData(h, sizeof(*k));
         assert(v->x == 2);
 
         WV_DestroyBiInst(&table, key);
-        assert(WV_FetchInst(&table, key) == NULL);
+        assert(WV_FetchInstHeader(&table, key) == NULL);
         k1->a = 0;
         k1->b = 1;
         k2->c = 2;
         k2->d = 3;
         v = WV_CreateBiInst(&table, half_key1, half_key2, sizeof(*v));
         WV_DestroyBiInst(&table, key);
-        assert(WV_FetchInst(&table, key) == NULL);
+        assert(WV_FetchInstHeader(&table, key) == NULL);
     }
 
     WV_CleanBiTable(&table, sizeof(*k));

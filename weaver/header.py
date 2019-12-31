@@ -34,6 +34,9 @@ class Struct:
     def name(self) -> str:
         return f'_h{self.struct_id}'
 
+    def sizeof(self) -> str:
+        return f'sizeof(*{self.name()})'
+
 
 class ParseAction:
     def iterate_structs(self) -> Generator[Struct, None, None]:

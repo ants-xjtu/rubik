@@ -81,7 +81,7 @@ class PrefetchInstWriter(InstrWriter):
         for reg, arg in zip(context.recurse_context.key_struct.regs, context.instr.args):
             text_lines.append(context.write_instr(SetValue(reg, arg)))
         text_lines.append(
-            f'{context.recurse_context.prefetch_name()} = WV_FetchInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
+            f'{context.recurse_context.prefetch_name()} = WV_FetchInstHeader(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()});'
         )
         return '\n'.join(text_lines)
 
@@ -91,14 +91,14 @@ class CreateInstWriter(InstrWriter):
         assert context.recurse_context.inst_struct is not None
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
-        inst_name = context.recurse_context.inst_struct.name()
-        return f'{inst_name} = WV_CreateInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()}, sizeof(*{inst_name}));'
+        return f'{context.recurse_context.inst_struct.name()} = WV_CreateInst(&runtime->tables[{context.recurse_context.layer_id}], {context.recurse_context.instance_key()}, {context.recurse_context.inst_struct.sizeof()});'
 
 
 class FetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert context.recurse_context.inst_struct is not None
-        return f'{context.recurse_context.inst_struct.name()} = {context.recurse_context.prefetch_name()};'
+        # TODO: BiInst
+        return f'{context.recurse_context.inst_struct.name()} = (WV_Any){context.recurse_context.prefetch_name()};'
 
 
 class SetInstValueWriter(InstrWriter):
@@ -167,8 +167,8 @@ class NextWriter(InstrWriter):
         assert context.instr.provider == runtime
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
         return (
-            ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
-            f'goto L{next_entry}; L{next_entry}_Ret:'
+                ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
+                f'goto L{next_entry}; L{next_entry}_Ret:'
         )
 
 
