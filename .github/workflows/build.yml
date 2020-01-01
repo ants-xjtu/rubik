@@ -33,3 +33,7 @@ jobs:
     - name: Run native tests
       run: |
         make -C native/runtime test
+    - name: Test with pytest
+      run: |
+        pip install pytest
+        pytest
