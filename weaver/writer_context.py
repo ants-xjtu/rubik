@@ -19,7 +19,8 @@ class GlobalContext:
 
     def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction],
                               key_struct: Struct = None, inst_struct: Struct = None):
-        context = BlockRecurseContext(self, entry_block, layer_id, header_actions, key_struct, inst_struct)
+        context = BlockRecurseContext(
+            self, entry_block, layer_id, header_actions, key_struct, inst_struct)
         self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
@@ -43,13 +44,13 @@ class GlobalContext:
         decl_text = '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
                               not reg.abstract and not isinstance(reg, StructRegAux))
         body_text = (
-                'WV_U8 status = 0;\n\n' +
-                decl_text + '\n\n' +
-                self.pre_text + '\n\n' +
-                'WV_ByteSlice current = packet;\n'
-                f'goto L{global_entry.block_id};\n' +
-                self.text + '\n\n' +
-                f'L{global_entry.block_id}_Ret: {make_block("return status;")}'
+            'WV_U8 status = 0;\n\n' +
+            decl_text + '\n\n' +
+            self.pre_text + '\n\n' +
+            'WV_ByteSlice current = packet;\n'
+            f'goto L{global_entry.block_id};\n' +
+            self.text + '\n\n' +
+            f'L{global_entry.block_id}_Ret: {make_block("return status;")}'
         )
         text = (
             '#include "weaver.h"\n\n'
@@ -85,7 +86,8 @@ class BlockRecurseContext:
                 tail_text = f'{s.name()}_alloc, *{s.name()};\n{s.name()} = &{s.name()}_alloc;'
             else:
                 tail_text = f'*{s.name()};'
-            structs_decl.append("struct " + make_block('\n'.join(fields)) + ' ' + tail_text)
+            structs_decl.append(
+                "struct " + make_block('\n'.join(fields)) + ' ' + tail_text)
             self.struct_regs_owner.update({reg: s for reg in s.regs})
 
         for action in self.actions:
@@ -95,8 +97,10 @@ class BlockRecurseContext:
         if self.key_struct is not None:
             assert self.inst_struct is not None
             execute_struct(self.key_struct)
-            execute_struct(self.inst_struct, extra=[f'WV_INST_EXTRA_DECL({self.key_struct.sizeof()})'])
-            structs_decl.append(f"WV_InstHeader({self.key_struct.sizeof()}) *{self.prefetch_name()};")
+            execute_struct(self.inst_struct, extra=[
+                           f'WV_INST_EXTRA_DECL({self.key_struct.sizeof()})'])
+            structs_decl.append(
+                f"WV_InstHeader({self.key_struct.sizeof()}) *{self.prefetch_name()};")
         self.global_context.append_pre_text('\n'.join(structs_decl))
 
     def execute_block(self, block: BasicBlock):

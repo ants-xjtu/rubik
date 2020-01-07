@@ -42,6 +42,7 @@ class Runtime:
         if block.cond is not None:
             cond = block.cond.try_eval(self.env)
             assert cond is not None
+            assert block.yes_block is not None and block.no_block is not None
             if bool(cond):
                 self.execute(block.yes_block)
             else:

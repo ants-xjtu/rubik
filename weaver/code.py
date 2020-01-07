@@ -212,18 +212,23 @@ class BasicBlock:
         agg_choice = agg_choice or Value([])
         dep_graph = BasicBlock.build_dep_graph(codes, agg_choice)
         scanned: List[Optional[Instr]] = [None] * len(codes)
-        choice_instr = {instr: instr in dep_graph[agg_choice] for instr in codes}
+        choice_instr = {
+            instr: instr in dep_graph[agg_choice] for instr in codes}
         for i in (j - 1 for j in range(len(codes), 0, -1)):
             instr = codes[i]
             if isinstance(instr, Command) and instr.opt_target:
                 choice = True
-                agg_choice = Value(list(set(agg_choice.regs + instr.read_regs)))
+                agg_choice = Value(
+                    list(set(agg_choice.regs + instr.read_regs)))
             if isinstance(instr, If):
-                scanned_yes, choice_yes = BasicBlock.scan_codes(instr.yes, agg_choice)
-                scanned_no, choice_no = BasicBlock.scan_codes(instr.no, agg_choice)
+                scanned_yes, choice_yes = BasicBlock.scan_codes(
+                    instr.yes, agg_choice)
+                scanned_no, choice_no = BasicBlock.scan_codes(
+                    instr.no, agg_choice)
                 if choice_yes or choice_no:
                     choice = True
-                    agg_choice = Value(list(set(agg_choice.regs + instr.read_regs)))
+                    agg_choice = Value(
+                        list(set(agg_choice.regs + instr.read_regs)))
                 if choice_yes or choice_no or choice_instr[instr]:
                     for dep_instr in dep_graph[instr]:
                         choice_instr[dep_instr] = True
@@ -296,7 +301,8 @@ class BasicBlock:
         label_line = f'L{self.block_id}:\n'
         code_lines = [str(instr) for instr in self.codes]
         if self.cond is not None:
-            code_lines.append(f'Goto If {self.cond} L{self.yes_block.block_id} Else L{self.no_block.block_id}')
+            code_lines.append(
+                f'Goto If {self.cond} L{self.yes_block.block_id} Else L{self.no_block.block_id}')
         if not code_lines:
             code_lines = ['Nop']
         return label_line + '\n'.join(code_lines)
@@ -354,8 +360,10 @@ class BasicBlock:
             codes = self.codes[:i]
             cond = instr.cond
             rest_codes = self.codes[i + 1:]
-            yes_block = BasicBlock(instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
-            no_block = BasicBlock(rest_codes, self.cond, self.yes_block, self.no_block)
+            yes_block = BasicBlock(
+                instr.yes + rest_codes, self.cond, self.yes_block, self.no_block)
+            no_block = BasicBlock(rest_codes, self.cond,
+                                  self.yes_block, self.no_block)
             return BasicBlock(codes, cond, yes_block, no_block).relocate_cond()
 
         # except BasicBlock.IfDep:
@@ -363,7 +371,8 @@ class BasicBlock:
         #     raise
 
         fixed_codes = [instr for i, instr in enumerate(self.codes) if fixed[i]]
-        shifted_codes = [instr for i, instr in enumerate(self.codes) if not fixed[i]]
+        shifted_codes = [instr for i, instr in enumerate(
+            self.codes) if not fixed[i]]
         if shifted_codes:
             yes_block = BasicBlock(shifted_codes + self.yes_block.codes, self.yes_block.cond,
                                    self.yes_block.yes_block,
