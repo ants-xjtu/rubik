@@ -1,4 +1,5 @@
 from __future__ import annotations
+# pylint: disable=unused-wildcard-import
 from typing import *
 from weaver.util import make_block
 

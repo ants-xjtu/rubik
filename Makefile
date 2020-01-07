@@ -1,5 +1,3 @@
-# for displaying correctly with PyCharm Makefile plugin
-LANG := en_US.ISO-8859-1
 # for tee >(...)
 SHELL := /bin/bash
 

@@ -1,5 +1,3 @@
-LANG := en_US.ISO-8859-1
-
 all: libwvrt.a
 
 libwvrt.a: profile.o runtime.o tommyds/tommy.o
