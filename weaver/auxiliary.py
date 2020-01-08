@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Dict
+from weaver.util import make_block
 
 if TYPE_CHECKING:
     from weaver.code import Reg
@@ -73,3 +74,37 @@ class StructRegAux(RegAux):
             return super().decl(reg)
         else:
             return f'{self.type_decl()} _{reg}: {self.bit_len};'
+
+
+class HeaderStructAux:
+    def __init__(self, struct):
+        self.struct = struct
+
+    def name(self) -> str:
+        return f'_h{self.struct.struct_id}'
+
+    def sizeof(self) -> str:
+        return f'sizeof(*{self.name()})'
+
+    def declare_type(self) -> str:
+        fields_text = make_block('\n'.join(reg_aux.decl(reg)
+                                           for reg in self.struct.regs))
+        return f'typedef struct {fields_text} H{self.struct.struct_id};'
+
+    @staticmethod
+    def create(struct):
+        return HeaderStructAux(struct)
+
+
+class DataStructAux:
+    def __init__(self, key_regs, struct):
+        self.key_regs = key_regs
+        self.struct = struct
+
+
+class DataStructAuxCreator:
+    def __init__(self, key_regs):
+        self.key_regs = key_regs
+
+    def __call__(self, struct):
+        return DataStructAux(self.key_regs, struct)

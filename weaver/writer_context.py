@@ -17,10 +17,9 @@ class GlobalContext:
         self.pre_text = ''
         self.call_decl: Dict[str, str] = {}
 
-    def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction],
-                              key_struct: Struct = None, inst_struct: Struct = None):
+    def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction], inst_struct: Struct = None):
         context = BlockRecurseContext(
-            self, entry_block, layer_id, header_actions, key_struct, inst_struct)
+            self, entry_block, layer_id, header_actions, inst_struct)
         self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
@@ -68,13 +67,12 @@ class GlobalContext:
 
 class BlockRecurseContext:
     def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, layer_id: int,
-                 actions: List[ParseAction], key_struct: Optional[Struct], inst_struct: Optional[Struct]):
+                 actions: List[ParseAction], inst_struct: Optional[Struct]):
         self.global_context = global_context
         self.entry_block = entry_block
         self.layer_id = layer_id
         self.actions = actions
         self.struct_regs_owner: Dict[Reg, Struct] = {}
-        self.key_struct = key_struct
         self.inst_struct = inst_struct
 
     def execute_header_action(self):

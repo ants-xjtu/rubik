@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, TYPE_CHECKING
 from weaver.header import Struct, LocateStruct
-from weaver.auxiliary import StructRegAux, reg_aux
+from weaver.auxiliary import StructRegAux, reg_aux, HeaderStructAux, DataStructAuxCreator
 from weaver.code import Reg
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ eth_header = Struct([
     make_reg(eth_src2, 2),
     make_reg(eth_src3, 2),
     make_reg(eth_type, 2),
-])
+], HeaderStructAux.create)
 eth: List[ParseAction] = [
     LocateStruct(eth_header),
 ]
@@ -66,17 +66,16 @@ ip_header = Struct([
     make_reg(ip_checksum, 2),
     make_reg(ip_src, 4),
     make_reg(ip_dst, 4),
-])
+], HeaderStructAux.create)
 ip: List[ParseAction] = [
     LocateStruct(ip_header),
 ]
-ip_key = Struct([
-    make_reg(20015, 4),
-    make_reg(20016, 4),
-], alloc=True)
 ip_state = 20017
 ip_seen_dont_frag = 20018
 ip_data = Struct([
     make_reg(ip_state, 1),
     make_reg(ip_seen_dont_frag, 1),
-])
+], DataStructAuxCreator([
+    ip_src,
+    ip_dst,
+]))

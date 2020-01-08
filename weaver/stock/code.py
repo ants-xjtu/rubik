@@ -1,3 +1,4 @@
+# pylint: disable = unused-wildcard-import
 from weaver.code import *
 from weaver.writer import *
 from weaver.stock import header
@@ -21,7 +22,7 @@ eth: List[Instr] = [
 ]
 
 # IP protocol
-psm_state = make_reg(1000, 1)
+# psm_state = make_reg(1000, 1)
 psm_triggered = make_reg(2000, 1)
 psm_trans = make_reg(2001, 2)
 
@@ -44,12 +45,10 @@ ip: List[Instr] = [
     Command(instance_table, 'Prefetch', [saddr, daddr], aux=PrefetchInstWriter()),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
-        SetValue(psm_state, Value([instance_table, header.ip_state], '{1}')),
-        SetValue(seen_dont_frag, Value([instance_table, header.ip_seen_dont_frag], '{1}')),
     ], [
            Command(instance_table, 'Create', [], opt_target=True, aux=CreateInstWriter()),
-           SetValue(psm_state, DUMP),
-           SetValue(seen_dont_frag, no),
+           SetValue(header.ip_state, DUMP),
+           SetValue(header.ip_seen_dont_frag, no),
        ]),
     SetValue(offset, Value([header_parser, header.ip_offset1, header.ip_offset2], '(({1} << 8) + {2}) << 3')),
     SetValue(payload,
@@ -64,47 +63,44 @@ ip: List[Instr] = [
             opt_target=True, aux=InsertDataWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, DUMP), [
+        If(EqualTest(header.ip_state, DUMP), [
             If(dont_frag, [
                 SetValue(psm_trans, dump),
-                SetValue(psm_state, DUMP),
+                SetValue(header.ip_state, DUMP),
                 SetValue(psm_triggered, yes),
             ]),
             If(more_frag, [
                 SetValue(psm_trans, more),
-                SetValue(psm_state, FRAG),
+                SetValue(header.ip_state, FRAG),
                 SetValue(psm_triggered, yes),
             ]),
             SetValue(psm_triggered, yes),
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, FRAG), [
+        If(EqualTest(header.ip_state, FRAG), [
             If(dont_frag, [
-                SetValue(seen_dont_frag, yes),
+                SetValue(header.ip_seen_dont_frag, yes),
             ]),
-            If(EqualTest(seen_dont_frag, yes), [
+            If(EqualTest(header.ip_seen_dont_frag, yes), [
                 If(ready, [
                     SetValue(psm_trans, last),
-                    SetValue(psm_state, DUMP),
+                    SetValue(header.ip_state, DUMP),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
-            If(AggValue([EqualTest(seen_dont_frag, no), ready], '{0} or {1}', AggValueWriter('{0} || {1}')), [
+            If(AggValue([EqualTest(header.ip_seen_dont_frag, no), ready], '{0} or {1}', AggValueWriter('{0} || {1}')), [
                 SetValue(psm_trans, frag),
-                SetValue(psm_state, FRAG),
+                SetValue(header.ip_state, FRAG),
                 SetValue(psm_triggered, yes),
             ]),
             SetValue(psm_triggered, yes),
         ]),
     ]),
-    If(EqualTest(psm_state, DUMP), [
+    If(EqualTest(header.ip_state, DUMP), [
         Command(sequence, 'Assemble', [], opt_target=True, aux=SeqAssembleWriter()),
     ]),
-    Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')], aux=SetInstValueWriter(header.ip_state)),
-    Command(instance_table, 'Set{seen_dont_frag}', [Value([seen_dont_frag], '{0}')],
-            aux=SetInstValueWriter(header.ip_seen_dont_frag)),
-    If(EqualTest(psm_state, DUMP), [
+    If(EqualTest(header.ip_state, DUMP), [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
             # next_tcp,
         ]),

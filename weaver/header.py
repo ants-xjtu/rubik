@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, TYPE_CHECKING, Dict, Generator
 from weaver.auxiliary import reg_aux, StructRegAux
+from weaver.util import make_block
 
 if TYPE_CHECKING:
     from weaver.code import Reg, Value
@@ -9,13 +10,13 @@ if TYPE_CHECKING:
 class Struct:
     count = 0
 
-    def __init__(self, regs: List[Reg], alloc: bool = False):
+    def __init__(self, regs: List[Reg], aux_creator):
         # assert all(isinstance(reg_aux[reg], StructRegAux) for reg in regs)
         self.struct_id = Struct.count
         Struct.count += 1
         self.regs: List[Reg] = regs
         self.byte_length = Struct.calculate_length(regs)
-        self.alloc = alloc
+        self.aux_creator = aux_creator
 
     @staticmethod
     def calculate_length(regs: List[Reg]) -> int:
@@ -31,11 +32,8 @@ class Struct:
         assert bit_length % 8 == 0
         return bit_length // 8
 
-    def name(self) -> str:
-        return f'_h{self.struct_id}'
-
-    def sizeof(self) -> str:
-        return f'sizeof(*{self.name()})'
+    def create_aux(self):
+        return self.aux_creator(self)
 
 
 class ParseAction:
