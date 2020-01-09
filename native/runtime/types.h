@@ -20,4 +20,15 @@ static inline WV_U32 WV_HToN32(WV_U32 x) {
     return htonl(x);
 }
 
+
+typedef struct _WV_ByteSlice {
+    const WV_Byte *cursor;
+    WV_U32 length;
+} WV_ByteSlice;
+
+static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index) {
+    WV_ByteSlice after = { .cursor = slice.cursor + index, .length = slice.length - index };
+    return after;
+}
+
 #endif

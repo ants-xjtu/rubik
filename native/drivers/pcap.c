@@ -24,7 +24,7 @@ void proc(WV_Byte *user, const struct pcap_pkthdr *pcap_header, const WV_Byte *p
     WV_Runtime *runtime = ((PcapUser *)user)->runtime;
     WV_ByteSlice packet = { .cursor = pcap_data, .length = pcap_header->len };
     WV_U8 status = WV_ProcessPacket(packet, runtime);
-    WV_ProfileRecord(&runtime->profile, pcap_header->len, status);
+    WV_ProfileRecord(WV_GetProfile(runtime), pcap_header->len, status);
     if (ctrl_c) {
         pcap_breakloop(((PcapUser *)user)->pcap);
     }
@@ -37,8 +37,8 @@ int main(int argc, char *argv[]) {
     }
     char *pcap_filename = argv[1];
 
-    WV_Runtime runtime;
-    if (WV_InitRuntime(&runtime)) {
+    WV_Runtime *runtime;
+    if (!(runtime = WV_AllocRuntime())) {
         fprintf(stderr, "runtime initialization fail\n");
         return 1;
     }
@@ -50,20 +50,24 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    PcapUser user = { .runtime = &runtime, .pcap = pcap_packets };
+    PcapUser user = { .runtime = runtime, .pcap = pcap_packets };
 
     signal(SIGINT, ctrl_c_handler);
-    WV_ProfileStart(&runtime.profile);
+    WV_ProfileStart(WV_GetProfile(runtime));
     for (;;) {
         pcap_loop(pcap_packets, -1, proc, (void *)&user);
+        pcap_close(pcap_packets);
         if (ctrl_c) {
             break;
         }
-        pcap_close(pcap_packets);
         pcap_packets = pcap_open_offline(pcap_filename, errbuf);
+        if (!pcap_packets) {
+            fprintf(stderr, "pcap_open_offline: %s\n", errbuf);
+            return 1;
+        }
     }
 
-    if (WV_CleanRuntime(&runtime)) {
+    if (WV_FreeRuntime(runtime)) {
         fprintf(stderr, "runtime cleanup fail\n");
         return 1;
     }
