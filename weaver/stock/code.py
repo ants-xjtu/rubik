@@ -15,7 +15,8 @@ ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 eth: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
-    Command(runtime, 'Call', [Value([header.eth_type])], aux=CallWriter('check_eth_type')),
+    Command(runtime, 'Call', [Value([header.eth_type])],
+            aux=CallWriter('check_eth_type', [header.eth_type])),
     If(Value([header_parser, header.eth_type], '{1} == WV_HToN16(0x0800)'), [
         next_ip,
     ]),
@@ -42,15 +43,18 @@ payload = make_reg(2003)
 next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 ip: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
-    Command(instance_table, 'Prefetch', [saddr, daddr], aux=PrefetchInstWriter()),
+    Command(instance_table, 'Prefetch', [
+            saddr, daddr], aux=PrefetchInstWriter()),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
     ], [
-           Command(instance_table, 'Create', [], opt_target=True, aux=CreateInstWriter()),
-           SetValue(header.ip_state, DUMP),
-           SetValue(header.ip_seen_dont_frag, no),
-       ]),
-    SetValue(offset, Value([header_parser, header.ip_offset1, header.ip_offset2], '(({1} << 8) + {2}) << 3')),
+        Command(instance_table, 'Create', [],
+                opt_target=True, aux=CreateInstWriter()),
+        SetValue(header.ip_state, DUMP),
+        SetValue(header.ip_seen_dont_frag, no),
+    ]),
+    SetValue(offset, Value([header_parser, header.ip_offset1,
+                            header.ip_offset2], '(({1} << 8) + {2}) << 3')),
     SetValue(payload,
              AggValue([Value([header_parser, header.ip_len], '{1}'), Value([header_parser], aux=PayloadWriter())],
                       '(WV_ByteSlice){{ .cursor = {1}.cursor, .length = {0} }}')),
@@ -98,13 +102,16 @@ ip: List[Instr] = [
         ]),
     ]),
     If(EqualTest(header.ip_state, DUMP), [
-        Command(sequence, 'Assemble', [], opt_target=True, aux=SeqAssembleWriter()),
+        Command(sequence, 'Assemble', [],
+                opt_target=True, aux=SeqAssembleWriter()),
     ]),
     If(EqualTest(header.ip_state, DUMP), [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
+            Command(runtime, 'Call', [], aux=CallWriter('count_tcp_payload'), opt_target=True),
             # next_tcp,
         ]),
-        Command(instance_table, 'Destroy', [], opt_target=True, aux=DestroyInstWriter()),
+        Command(instance_table, 'Destroy', [],
+                opt_target=True, aux=DestroyInstWriter()),
     ])
 ]
 
@@ -160,7 +167,8 @@ value_ack_num = Value([header_parser], 'header->ack_num')
 value_syn = Value([header_parser], 'header->syn')
 value_fin = Value([header_parser], 'header->fin')
 value_to_active = Value([reg_to_active], '{0}')
-value_to_passive = Value([reg_to_active], 'not {0}', TemplateValueWriter('!{0}'))
+value_to_passive = Value(
+    [reg_to_active], 'not {0}', TemplateValueWriter('!{0}'))
 
 
 def assign_data(data: Value, data_len: Value) -> List[Instr]:
@@ -199,45 +207,56 @@ tcp: List[Instr] = [
         Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
         SetValue(reg_to_active, Value([instance_table], 'InstToActive()')),
         SetValue(psm_state, Value([instance_table], 'inst->state')),
-        SetValue(reg_fin_seq_1, Value([instance_table], 'inst->reg_fin_seq_1')),
-        SetValue(reg_fin_seq_2, Value([instance_table], 'inst->reg_fin_seq_2')),
-        SetValue(reg_active_wsize, Value([instance_table], 'inst->reg_active_wsize')),
-        SetValue(reg_active_wscale, Value([instance_table], 'inst->reg_active_wscale')),
-        SetValue(reg_active_lwnd, Value([instance_table], 'inst->reg_active_lwnd')),
-        SetValue(reg_passive_wsize, Value([instance_table], 'inst->reg_passive_wsize')),
-        SetValue(reg_passive_wscale, Value([instance_table], 'inst->reg_passive_wscale')),
-        SetValue(reg_passive_lwnd, Value([instance_table], 'inst->reg_passive_lwnd')),
+        SetValue(reg_fin_seq_1, Value(
+            [instance_table], 'inst->reg_fin_seq_1')),
+        SetValue(reg_fin_seq_2, Value(
+            [instance_table], 'inst->reg_fin_seq_2')),
+        SetValue(reg_active_wsize, Value(
+            [instance_table], 'inst->reg_active_wsize')),
+        SetValue(reg_active_wscale, Value(
+            [instance_table], 'inst->reg_active_wscale')),
+        SetValue(reg_active_lwnd, Value(
+            [instance_table], 'inst->reg_active_lwnd')),
+        SetValue(reg_passive_wsize, Value(
+            [instance_table], 'inst->reg_passive_wsize')),
+        SetValue(reg_passive_wscale, Value(
+            [instance_table], 'inst->reg_passive_wscale')),
+        SetValue(reg_passive_lwnd, Value(
+            [instance_table], 'inst->reg_passive_lwnd')),
         SetValue(reg_seen_ack, Value([instance_table], 'inst->reg_seen_ack')),
         SetValue(reg_seen_fin, Value([instance_table], 'inst->reg_seen_fin')),
         SetValue(reg_wv2_expr, Value([instance_table], 'inst->reg_wv2_expr')),
-        SetValue(reg_wv2_fast_expr, Value([instance_table], 'inst->reg_wv2_fast_expr')),
+        SetValue(reg_wv2_fast_expr, Value(
+            [instance_table], 'inst->reg_wv2_fast_expr')),
         SetValue(reg_wv4_expr, Value([instance_table], 'inst->reg_wv4_expr')),
     ], [
-           Command(instance_table, 'Create', [saddr, sport, daddr, dport], opt_target=True),
-           SetValue(reg_to_active, no),
-           SetValue(psm_state, CLOSED),
-           SetValue(reg_fin_seq_1, no),
-           SetValue(reg_fin_seq_2, no),
-           SetValue(reg_active_wsize, Value([], '(1 << 32) - 1')),
-           SetValue(reg_active_wscale, no),
-           SetValue(reg_active_lwnd, no),
-           SetValue(reg_passive_wsize, Value([], '(1 << 32) - 1')),
-           SetValue(reg_passive_wscale, no),
-           SetValue(reg_passive_lwnd, no),
-           SetValue(reg_seen_ack, no),
-           SetValue(reg_seen_fin, no),
-           SetValue(reg_wv2_expr, no),
-           SetValue(reg_wv2_fast_expr, no),
-           SetValue(reg_wv4_expr, no),
-       ]),
+        Command(instance_table, 'Create', [
+                saddr, sport, daddr, dport], opt_target=True),
+        SetValue(reg_to_active, no),
+        SetValue(psm_state, CLOSED),
+        SetValue(reg_fin_seq_1, no),
+        SetValue(reg_fin_seq_2, no),
+        SetValue(reg_active_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(reg_active_wscale, no),
+        SetValue(reg_active_lwnd, no),
+        SetValue(reg_passive_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(reg_passive_wscale, no),
+        SetValue(reg_passive_lwnd, no),
+        SetValue(reg_seen_ack, no),
+        SetValue(reg_seen_fin, no),
+        SetValue(reg_wv2_expr, no),
+        SetValue(reg_wv2_fast_expr, no),
+        SetValue(reg_wv4_expr, no),
+    ]),
     If(value_ack, assign_data(value_payload, value_payload_len), [
         If(value_syn, assign_data(no, Value([], '1')), [
             If(value_fin, assign_data(value_payload, AggValue([value_payload_len], '{0} + 1')) + [
                 If(EqualTest(psm_state, EST), [
-                    SetValue(reg_fin_seq_1, AggValue([value_seq_num, value_payload_len], '{0} + {1}')),
+                    SetValue(reg_fin_seq_1, AggValue(
+                        [value_seq_num, value_payload_len], '{0} + {1}')),
                 ], [
-                       SetValue(reg_fin_seq_2, value_seq_num),
-                   ]),
+                    SetValue(reg_fin_seq_2, value_seq_num),
+                ]),
             ]),
         ]),
     ]),
@@ -251,7 +270,8 @@ tcp: List[Instr] = [
             [Value([instance_table]), value_seq_num, Value([reg_data_len], '{0}'),
              Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')],
             opt_target=True),
-    Command(sequence, 'InsertData', [Value([instance_table]), Value([reg_data], '{0}')], opt_target=True),
+    Command(sequence, 'InsertData', [Value([instance_table]), Value(
+        [reg_data], '{0}')], opt_target=True),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(psm_state, CLOSED), [
@@ -273,10 +293,10 @@ tcp: List[Instr] = [
         If(EqualTest(psm_state, SYN_SENT), [
             If(AggValue([value_to_active, value_syn, value_ack], '{0} and {1} == 1 and {2} == 1',
                         TemplateValueWriter('{0} && {1} && !{2}')), [
-                   SetValue(psm_trans, trans_hs2),
-                   SetValue(psm_state, SYN_RECV),
-                   SetValue(psm_triggered, yes),
-               ]),
+                SetValue(psm_trans, trans_hs2),
+                SetValue(psm_state, SYN_RECV),
+                SetValue(psm_triggered, yes),
+            ]),
             to_rst(SYN_SENT),
             SetValue(psm_triggered, yes),
         ]),
@@ -322,8 +342,8 @@ tcp: List[Instr] = [
         If(EqualTest(psm_state, FIN_WAIT), [
             If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
                         '{0} and {1} == 0 and {2} + 1 == {3}', TemplateValueWriter('{0} && !{1} && {2} + 1 == {3}')), [
-                   SetValue(reg_wv2_expr, yes),
-               ]),
+                SetValue(reg_wv2_expr, yes),
+            ]),
             If(EqualTest(reg_wv2_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv2),
@@ -333,8 +353,8 @@ tcp: List[Instr] = [
             ]),
             If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
                         '{0} and {1} and {2} + 1 == {3}', TemplateValueWriter('{0} && {1} && {2} + 1 == {3}')), [
-                   SetValue(reg_wv2_fast_expr, yes),
-               ]),
+                SetValue(reg_wv2_fast_expr, yes),
+            ]),
             If(EqualTest(reg_wv2_fast_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv2_fast),
@@ -361,8 +381,8 @@ tcp: List[Instr] = [
         If(EqualTest(psm_state, LAST_ACK), [
             If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} and {1} + 1 == {2}',
                         TemplateValueWriter('{0} && {1} + 1 == {2}')), [
-                   SetValue(reg_wv4_expr, yes),
-               ]),
+                SetValue(reg_wv4_expr, yes),
+            ]),
             If(EqualTest(reg_wv4_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv4),
@@ -382,21 +402,35 @@ tcp: List[Instr] = [
         Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True),
     ]),
     Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')]),
-    Command(instance_table, 'Set{reg_data_len}', [Value([reg_data_len], '{0}')]),
+    Command(instance_table, 'Set{reg_data_len}',
+            [Value([reg_data_len], '{0}')]),
     Command(instance_table, 'Set{reg_data}', [Value([reg_data], '{0}')]),
-    Command(instance_table, 'Set{reg_fin_seq_1}', [Value([reg_fin_seq_1], '{0}')]),
-    Command(instance_table, 'Set{reg_fin_seq_2}', [Value([reg_fin_seq_2], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_lwnd}', [Value([reg_passive_lwnd], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_wscale}', [Value([reg_passive_wscale], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_wsize}', [Value([reg_passive_wsize], '{0}')]),
-    Command(instance_table, 'Set{reg_active_lwnd}', [Value([reg_active_lwnd], '{0}')]),
-    Command(instance_table, 'Set{reg_active_wscale}', [Value([reg_active_wscale], '{0}')]),
-    Command(instance_table, 'Set{reg_active_wsize}', [Value([reg_active_wsize], '{0}')]),
-    Command(instance_table, 'Set{reg_seen_ack}', [Value([reg_seen_ack], '{0}')]),
-    Command(instance_table, 'Set{reg_seen_fin}', [Value([reg_seen_fin], '{0}')]),
-    Command(instance_table, 'Set{reg_wv2_expr}', [Value([reg_wv2_expr], '{0}')]),
-    Command(instance_table, 'Set{reg_wv2_fast_expr}', [Value([reg_wv2_fast_expr], '{0}')]),
-    Command(instance_table, 'Set{reg_wv4_expr}', [Value([reg_wv4_expr], '{0}')]),
+    Command(instance_table, 'Set{reg_fin_seq_1}',
+            [Value([reg_fin_seq_1], '{0}')]),
+    Command(instance_table, 'Set{reg_fin_seq_2}',
+            [Value([reg_fin_seq_2], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_lwnd}', [
+            Value([reg_passive_lwnd], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_wscale}', [
+            Value([reg_passive_wscale], '{0}')]),
+    Command(instance_table, 'Set{reg_passive_wsize}', [
+            Value([reg_passive_wsize], '{0}')]),
+    Command(instance_table, 'Set{reg_active_lwnd}', [
+            Value([reg_active_lwnd], '{0}')]),
+    Command(instance_table, 'Set{reg_active_wscale}', [
+            Value([reg_active_wscale], '{0}')]),
+    Command(instance_table, 'Set{reg_active_wsize}', [
+            Value([reg_active_wsize], '{0}')]),
+    Command(instance_table, 'Set{reg_seen_ack}',
+            [Value([reg_seen_ack], '{0}')]),
+    Command(instance_table, 'Set{reg_seen_fin}',
+            [Value([reg_seen_fin], '{0}')]),
+    Command(instance_table, 'Set{reg_wv2_expr}',
+            [Value([reg_wv2_expr], '{0}')]),
+    Command(instance_table, 'Set{reg_wv2_fast_expr}', [
+            Value([reg_wv2_fast_expr], '{0}')]),
+    Command(instance_table, 'Set{reg_wv4_expr}',
+            [Value([reg_wv4_expr], '{0}')]),
     If(EqualTest(psm_state, TERMINATE), [
         Command(instance_table, 'Destroy', [], opt_target=True),
     ])

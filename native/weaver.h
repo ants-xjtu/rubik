@@ -2,7 +2,10 @@
 #ifndef WV_WEAVER_H
 #define WV_WEAVER_H
 
+#include <stdlib.h>
+#include <string.h>
 #include "runtime/types.h"
+#include "runtime/seq.h"
 #include "runtime/profile.h"
 
 // implemented by blackbox

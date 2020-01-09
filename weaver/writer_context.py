@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Dict, List, Optional
 from weaver.writer import ValueWriter, InstrWriter
-from weaver.auxiliary import reg_aux, StructRegAux
+from weaver.auxiliary import reg_aux, StructRegAux, DataStructAux
 from weaver.util import make_block
 from weaver.code import Instr
 
@@ -13,47 +13,172 @@ if TYPE_CHECKING:
 class GlobalContext:
     def __init__(self, next_table: Dict[Instr, BasicBlock]):
         # 0 is preserved for global exit
-        self.next_index: Dict[Instr, int] = {instr: i + 1 for i, instr in enumerate(next_table.keys())}
+        self.next_index: Dict[Instr, int] = {
+            instr: i + 1 for i, instr in enumerate(next_table.keys())}
         self.next_table = next_table
         self.text = ''
-        self.required_header_types = set()
+        self.required_headers = set()
+        self.required_calls = {}
+        self.required_inst = {}
+        self.layer_count = 0
+        self.recurse_contexts = []
+        self.struct_regs_owner = {}
 
-    def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction], inst_struct: Struct = None):
+    def execute_block_recurse(self,
+                              entry_block: BasicBlock,
+                              header_actions: List[ParseAction],
+                              inst_struct: Struct = None,
+                              ):
+        layer_id = self.layer_count
+        self.layer_count += 1
+        if inst_struct is not None:
+            self.required_inst[layer_id] = inst_struct
         context = BlockRecurseContext(
             self, entry_block, layer_id, header_actions, inst_struct)
         context.execute_header_action()
-        for block in entry_block.recurse():
-            context.execute_block(block)
+        context.execute_inst_struct()
+        self.recurse_contexts.append(context)
 
     def append_text(self, text_part: str):
         if self.text:
             self.text += '\n'
         self.text += text_part
 
+    def execute_all(self):
+        for context in self.recurse_contexts:
+            context.execute_all()
+
     def write_all(self, global_entry: BasicBlock) -> str:
-        decl_text = '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
-                              not reg.abstract and not isinstance(reg, StructRegAux))
-        header_types_decl_text = '\n'.join(struct.create_aux().declare_type() for struct in self.required_header_types)
-        body_text = (
-            decl_text + '\n\n' +
-            'WV_U8 status = 0;\n' +
-            'WV_ByteSlice current = packet;\n'
-            'WV_U8 ret_target = 0;\n'
-            f'goto L{global_entry.block_id};\n\n' +
-            self.text + '\n\n' +
-            f'NI0_Ret: {make_block("return status;")}'
+        return (
+            '#include <weaver.h>\n' +
+            '#include <tommyds/tommyhashdyn.h>\n\n' +
+            '#if TOMMY_SIZE_BIT == 64\n' +
+            '#define hash(k, s) tommy_hash_u64(0, k, s)\n' +
+            '#else\n' +
+            '#define hash(k, s) tommy_hash_u32(0, k, s)\n' +
+            '#endif\n\n' +
+            self.write_extern_calls_decl() + '\n\n' +
+            self.write_header_types_decl() + '\n\n' +
+            self.write_inst_types_decl() + '\n\n' +
+            self.write_eq_funcs() + '\n\n' +
+            self.write_runtime_impl() + '\n\n' +
+            f'WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) ' + make_block(
+                GlobalContext.write_regs() + '\n\n' +
+                self.write_header_pointers_decl() + '\n\n' +
+                self.write_inst_decl() + '\n\n' +
+                self.write_content_vars() + '\n\n' +
+                'WV_U8 status = 0;\n' +
+                'WV_ByteSlice current = packet;\n'
+                'WV_U8 ret_target = 0;\n'
+                f'goto L{global_entry.block_id};\n\n' +
+                self.text + '\n\n' +
+                f'NI0_Ret: {make_block("return status;")}'
+            )
         )
-        text = (
-            '#include "weaver.h"\n\n' +
-            header_types_decl_text + '\n\n'
-            f'WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) {make_block(body_text)}'
-        )
-        return text
+
+    def write_header_types_decl(self) -> str:
+        return '\n'.join(
+            struct.create_aux().declare_type() for struct in self.required_headers)
+
+    def write_inst_types_decl(self) -> str:
+        # TODO: BiInst
+        return '\n'.join(struct.create_aux().declare_inst_type(lid, False) for lid, struct in self.required_inst.items())
+
+    def write_inst_decl(self) -> str:
+        return '\n'.join(
+            f'L{lid}_Fetch *f{lid};\n'
+            f'{struct.create_aux().declare_pointer()}'
+            for lid, struct in self.required_inst.items())
+
+    def write_content_vars(self) -> str:
+        return '\n'.join(f'WV_ByteSlice c{i};' for i in range(self.layer_count))
+
+    @staticmethod
+    def write_regs() -> str:
+        return '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
+                         not reg.abstract and not isinstance(reg, StructRegAux))
+
+    def write_header_pointers_decl(self) -> str:
+        return '\n'.join(
+            struct.create_aux().declare_pointer() for struct in self.required_headers)
 
     def write_ret_switch(self) -> str:
         max_target = len(self.next_index) + 1
-        targets_text = '\n'.join(f'case {index}: goto NI{index}_Ret;' for index in range(max_target))
+        targets_text = '\n'.join(
+            f'case {index}: goto NI{index}_Ret;' for index in range(max_target))
         return f'switch (ret_target) {make_block(targets_text)}'
+
+    def write_extern_calls_decl(self) -> str:
+        return '\n'.join(
+            f'extern WV_U8 {name}({", ".join(reg_aux[reg].type_decl() for reg in regs)});' for name, regs in self.required_calls.items())
+
+    def write_eq_funcs(self) -> str:
+        return '\n'.join(
+            f'int {GlobalContext.eq_func_name(lid)}(const void *key, const void *object) ' + make_block(
+                f'return memcmp(key, object, sizeof({GlobalContext.key_struct_name(lid)}));'
+            )
+            for lid, struct in self.required_inst.items())
+
+    @staticmethod
+    def eq_func_name(layer_id) -> str:
+        return f'l{layer_id}_eq'
+
+    @staticmethod
+    def key_struct_name(layer_id) -> str:
+        return DataStructAux.key_struct_type(layer_id)
+
+    def write_runtime_impl(self) -> str:
+        runtime_struct = 'struct _WV_Runtime ' + make_block('\n'.join([
+            'WV_Profile profile;',
+        ] + [
+            f'{struct.create_aux().typedef()} *{GlobalContext.prealloc(lid)};'
+            for lid, struct in self.required_inst.items()
+        ] + [
+            f'tommy_hashdyn hash_{lid};' for lid in self.required_inst.keys()
+        ])) + ';'
+        alloc_runtime = 'WV_Runtime *WV_AllocRuntime() ' + make_block('\n'.join([
+            'WV_Runtime *rt = malloc(sizeof(WV_Runtime));',
+            *[
+                f'tommy_hashdyn_init(&rt->hash_{lid});\n' +
+                f'rt->{GlobalContext.prealloc(lid)} = malloc(sizeof({struct.create_aux().typedef()}));\n' +
+                f'memset(rt->{GlobalContext.prealloc(lid)}, 0, sizeof({struct.create_aux().typedef()}));'
+                for lid, struct in self.required_inst.items()
+            ],
+            'return rt;',
+        ]))
+        free_runtime = 'WV_U8 WV_FreeRuntime(WV_Runtime *rt) ' + make_block('\n'.join([
+            'free(rt);',
+            *[
+                # TODO: free instances in table
+                f'tommy_hashdyn_done(&rt->hash_{lid});\n' +
+                f'free(rt->{GlobalContext.prealloc(lid)});'
+                for lid, struct in self.required_inst.items()
+            ],
+            'return 0;',
+        ]))
+        get_profile = 'WV_Profile *WV_GetProfile(WV_Runtime *rt) ' + make_block('\n'.join([
+            'return &rt->profile;'
+        ]))
+        return '\n'.join([runtime_struct, alloc_runtime, free_runtime, get_profile])
+
+    def write_template(self) -> str:
+        text = '#include "weaver.h"\n\n'
+        for name, regs in self.required_calls.items():
+            if regs == []:
+                call_text = f'WV_U8 {name}() '
+            else:
+                call_text = f'WV_U8 {name}('
+                for reg in regs:
+                    call_text += f'\n  {reg_aux[reg].type_decl()} _{reg},'
+                call_text = call_text[:-1]  # eat postfix comma
+                call_text += '\n) '
+            call_text += make_block('//') + '\n\n'
+            text += call_text
+        return text
+
+    @staticmethod
+    def prealloc(layer_id) -> str:
+        return f'prealloc_{layer_id}'
 
 
 class BlockRecurseContext:
@@ -63,7 +188,6 @@ class BlockRecurseContext:
         self.entry_block = entry_block
         self.layer_id = layer_id
         self.actions = actions
-        self.struct_regs_owner: Dict[Reg, Struct] = {}
         self.inst_struct = inst_struct
 
     def execute_header_action(self):
@@ -71,8 +195,14 @@ class BlockRecurseContext:
         for action in self.actions:
             for struct in action.iterate_structs():
                 structs_decl.append(struct.create_aux().declare_type())
-                self.struct_regs_owner.update({reg: struct for reg in struct.regs})
-                self.global_context.required_header_types.add(struct)
+                self.global_context.struct_regs_owner.update(
+                    {reg: struct for reg in struct.regs})
+                self.global_context.required_headers.add(struct)
+
+    def execute_inst_struct(self):
+        if self.inst_struct is not None:
+            self.global_context.struct_regs_owner.update(
+                {reg: self.inst_struct for reg in self.inst_struct.regs})
 
     def execute_block(self, block: BasicBlock):
         text = f'L{block.block_id}: '
@@ -87,14 +217,24 @@ class BlockRecurseContext:
             codes_text += self.global_context.write_ret_switch()
         self.global_context.append_text(text + make_block(codes_text))
 
+    def execute_all(self):
+        for block in self.entry_block.recurse():
+            self.execute_block(block)
+
     def content_name(self) -> str:
         return f'c{self.layer_id}'
 
     def prefetch_name(self) -> str:
         return f'f{self.layer_id}'
 
-    def instance_key(self) -> str:
-        return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{self.key_struct.name()}, .length = {self.key_struct.sizeof()} }}'
+    def eq_func_name(self) -> str:
+        return GlobalContext.eq_func_name(self.layer_id)
+
+    def key_struct_name(self) -> str:
+        return GlobalContext.key_struct_name(self.layer_id)
+
+    def prealloc(self) -> str:
+        return GlobalContext.prealloc(self.layer_id)
 
 
 class InstrContext:

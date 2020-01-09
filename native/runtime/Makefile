@@ -1,6 +1,6 @@
 all: libwvrt.a
 
-libwvrt.a: profile.o runtime.o tommyds/tommy.o
+libwvrt.a: profile.o tommyds/tommy.o
 	$(AR) rc $@ $^
 
 tommyds/tommy.o:
@@ -9,20 +9,9 @@ tommyds/tommy.o:
 %.o: %.c %.h types.h
 	$(CC) -c -g -O3 $< -I./tommyds
 
-runtime.o: table.h slice.h
-
 clean:
 	-$(RM) libwvrt.a
 	-$(RM) *.o *.gch
-	-$(RM) test_table test_bi_table
 	-$(MAKE) -C tommyds clean
 
-tests_exe: test_table test_bi_table
-
-test_%: tests/%.c libwvrt.a
-	$(CC) -o $@ -g $^ -I.
-
-test: tests_exe
-	./test_table && ./test_bi_table
-
-.PHONY: all clean test
+.PHONY: all clean

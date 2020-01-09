@@ -66,7 +66,7 @@ class StructRegAux(RegAux):
         self.bit_len = bit_len
 
     def value_name(self, context: InstrContext, reg: Reg) -> str:
-        owner = context.recurse_context.struct_regs_owner[reg]
+        owner = context.recurse_context.global_context.struct_regs_owner[reg]
         return f'{owner.create_aux().name()}->_{reg}'
 
     def decl(self, reg: Reg) -> str:
@@ -81,25 +81,56 @@ class HeaderStructAux:
         self.struct = struct
 
     def name(self) -> str:
-        return f'_h{self.struct.struct_id}'
+        return f'h{self.struct.struct_id}'
+
+    def typedef(self) -> str:
+        return f'H{self.struct.struct_id}'
 
     def sizeof(self) -> str:
-        return f'sizeof(*{self.name()})'
+        return f'sizeof({self.typedef()})'
 
     def declare_type(self) -> str:
         fields_text = make_block('\n'.join(reg_aux.decl(reg)
                                            for reg in self.struct.regs))
-        return f'typedef struct {fields_text} H{self.struct.struct_id};'
+        return f'typedef struct {fields_text} {self.typedef()};'
+
+    def declare_pointer(self) -> str:
+        return f'{self.typedef()} *{self.name()};'
 
     @staticmethod
     def create(struct):
         return HeaderStructAux(struct)
 
 
-class DataStructAux:
+class DataStructAux(HeaderStructAux):
     def __init__(self, key_regs, struct):
+        super().__init__(struct)
         self.key_regs = key_regs
-        self.struct = struct
+
+    def declare_type(self) -> str:
+        assert False, 'data struct should not be declared as header struct'
+
+    def declare_inst_type(self, layer_id, bi) -> str:
+        if not bi:
+            key_struct_text = 'typedef struct ' + make_block('\n'.join(
+                reg_aux.decl(reg) for reg in self.key_regs
+            )) + f' {DataStructAux.key_struct_type(layer_id)};'
+            inst_struct_text = 'typedef struct ' + make_block('\n'.join(
+                [
+                    f'{DataStructAux.key_struct_type(layer_id)} k;', 
+                    'tommy_node node;'
+                    'WV_Seq seq;'
+                ] + 
+                [reg_aux.decl(reg) for reg in self.struct.regs]
+            )) + f' {self.typedef()};'
+            fetch_text = f'typedef {self.typedef()} L{layer_id}_Fetch;'
+            return key_struct_text + '\n' + inst_struct_text + '\n' + fetch_text
+        else:
+            assert False
+
+    @staticmethod
+    def key_struct_type(layer_id) -> str:
+        return f'L{layer_id}_Key'
 
 
 class DataStructAuxCreator:

@@ -12,7 +12,7 @@ Two files named `weaver_blackbox.c` and `weaver_whitebox.template.c` will be gen
 
 **Do NOT touch or read `weaver_blackbox.c`.**
 
-Copy `weaver_whitebox.template.c` (to prevent overriding by next `make gen`) and edit as you wish.
+Rename `weaver_whitebox.template.c` (to prevent overriding by next `make gen`) and edit it as you wish.
 
 Run
 
