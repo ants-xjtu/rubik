@@ -67,7 +67,7 @@ class StructRegAux(RegAux):
 
     def value_name(self, context: InstrContext, reg: Reg) -> str:
         owner = context.recurse_context.struct_regs_owner[reg]
-        return f'{owner.name()}->_{reg}'
+        return f'{owner.create_aux().name()}->_{reg}'
 
     def decl(self, reg: Reg) -> str:
         if self.bit_len is None:

@@ -52,16 +52,10 @@ class InstrWriter:
             return text
         elif isinstance(context.instr, SetValue):
             assert not isinstance(context.instr, Command)
-            # if isinstance(context.instr, Command):
-            #     return '<placeholder>'
-            # # only registers that has been set value will be declared
-            # # this may help find bugs related to use-before-assignment bugs
-            # context.recurse_context.global_context.decl_regs.add(context.instr.reg)
             text = f'{reg_aux.write(context, context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
             return text
         else:
             assert False, 'should call `write` on subclasses'
-            # return '<placeholder>'
 
 
 class InstExistWriter(ValueWriter):
@@ -99,18 +93,6 @@ class FetchInstWriter(InstrWriter):
         assert context.recurse_context.inst_struct is not None
         # TODO: BiInst
         return f'{context.recurse_context.inst_struct.name()} = (WV_Any){context.recurse_context.prefetch_name()};'
-
-
-class SetInstValueWriter(InstrWriter):
-    def __init__(self, key: Reg):
-        super(SetInstValueWriter, self).__init__()
-        self.key = key
-
-    def write(self, context: InstrContext) -> str:
-        assert isinstance(context.instr, Command)
-        assert context.instr.provider == instance_table
-        assert len(context.instr.args) == 1
-        return f'{reg_aux.write(context, self.key)} = {context.write_value(context.instr.args[0])};'
 
 
 class InsertMetaWriter(InstrWriter):
@@ -166,9 +148,10 @@ class NextWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
+        self_index = context.recurse_context.global_context.next_index[context.instr]
         return (
                 ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
-                f'goto L{next_entry}; L{next_entry}_Ret:'
+                f'ret_target = {self_index}; goto L{next_entry}; NI{self_index}_Ret:'
         )
 
 
@@ -182,9 +165,9 @@ class ParseHeaderWriter(InstrWriter):
         text = ''
         for action in actions:
             for struct in action.iterate_structs():
-                text += f'{struct.name()} = NULL;\n'
+                text += f'{struct.create_aux().name()} = NULL;\n'
             if isinstance(action, LocateStruct):
-                text += f'{action.struct.name()} = (void *)current.cursor;\n'
+                text += f'{action.struct.create_aux().name()} = (WV_Any)current.cursor;\n'
                 text += f'current = WV_SliceAfter(current, {action.struct.byte_length});'
             else:
                 # TODO
@@ -193,20 +176,14 @@ class ParseHeaderWriter(InstrWriter):
 
 
 class CallWriter(InstrWriter):
-    def __init__(self, name: str, regs: List[Reg]):
+    def __init__(self, name: str):
         super(CallWriter, self).__init__()
         self.name = name
-        self.regs = regs
 
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
-        decl_core = f'WV_U8 {self.name}({", ".join(reg_aux[reg].type_decl() + f" _{i}" for i, reg in enumerate(self.regs))})'
-        context.recurse_context.global_context.insert_call_decl(self.name, decl_core + ' ' + make_block("//"))
-        return (
-            f'{decl_core};\n'
-            f'{self.name}({", ".join(reg_aux.write(context, reg) for reg in self.regs)});'
-        )
+        return f'{self.name}();'
 
 
 class PayloadWriter(ValueWriter):

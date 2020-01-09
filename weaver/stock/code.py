@@ -15,7 +15,7 @@ ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
 eth: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
-    Command(runtime, 'Call', [Value([header.eth_type])], aux=CallWriter('check_eth_type', [header.eth_type])),
+    Command(runtime, 'Call', [Value([header.eth_type])], aux=CallWriter('check_eth_type')),
     If(Value([header_parser, header.eth_type], '{1} == WV_HToN16(0x0800)'), [
         next_ip,
     ]),

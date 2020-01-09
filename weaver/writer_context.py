@@ -12,15 +12,15 @@ if TYPE_CHECKING:
 
 class GlobalContext:
     def __init__(self, next_table: Dict[Instr, BasicBlock]):
+        # 0 is preserved for global exit
+        self.next_index: Dict[Instr, int] = {instr: i + 1 for i, instr in enumerate(next_table.keys())}
         self.next_table = next_table
         self.text = ''
-        self.pre_text = ''
-        self.call_decl: Dict[str, str] = {}
+        self.required_header_types = set()
 
     def execute_block_recurse(self, entry_block: BasicBlock, layer_id: int, header_actions: List[ParseAction], inst_struct: Struct = None):
         context = BlockRecurseContext(
             self, entry_block, layer_id, header_actions, inst_struct)
-        self.append_pre_text(f'WV_ByteSlice {context.content_name()};')
         context.execute_header_action()
         for block in entry_block.recurse():
             context.execute_block(block)
@@ -30,39 +30,30 @@ class GlobalContext:
             self.text += '\n'
         self.text += text_part
 
-    def append_pre_text(self, text_part: str):
-        if self.pre_text:
-            self.pre_text += '\n'
-        self.pre_text += text_part
-
-    def insert_call_decl(self, name: str, decl: str):
-        assert name not in self.call_decl or decl == self.call_decl[name]
-        self.call_decl[name] = decl
-
-    def write_all(self, global_entry: BasicBlock, table_count: int) -> str:
+    def write_all(self, global_entry: BasicBlock) -> str:
         decl_text = '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
                               not reg.abstract and not isinstance(reg, StructRegAux))
+        header_types_decl_text = '\n'.join(struct.create_aux().declare_type() for struct in self.required_header_types)
         body_text = (
-            'WV_U8 status = 0;\n\n' +
             decl_text + '\n\n' +
-            self.pre_text + '\n\n' +
+            'WV_U8 status = 0;\n' +
             'WV_ByteSlice current = packet;\n'
-            f'goto L{global_entry.block_id};\n' +
+            'WV_U8 ret_target = 0;\n'
+            f'goto L{global_entry.block_id};\n\n' +
             self.text + '\n\n' +
-            f'L{global_entry.block_id}_Ret: {make_block("return status;")}'
+            f'NI0_Ret: {make_block("return status;")}'
         )
         text = (
-            '#include "weaver.h"\n\n'
-            f'WV_U8 WV_CONFIG_TABLE_COUNT = {table_count};\n\n'
+            '#include "weaver.h"\n\n' +
+            header_types_decl_text + '\n\n'
             f'WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) {make_block(body_text)}'
         )
         return text
 
-    def write_template(self) -> str:
-        return (
-            '#include "weaver.h"\n\n' +
-            '\n'.join(self.call_decl.values())
-        )
+    def write_ret_switch(self) -> str:
+        max_target = len(self.next_index) + 1
+        targets_text = '\n'.join(f'case {index}: goto NI{index}_Ret;' for index in range(max_target))
+        return f'switch (ret_target) {make_block(targets_text)}'
 
 
 class BlockRecurseContext:
@@ -77,29 +68,11 @@ class BlockRecurseContext:
 
     def execute_header_action(self):
         structs_decl = []
-
-        def execute_struct(s: Struct, extra: List[str] = None):
-            fields = (extra or []) + [reg_aux.decl(reg) for reg in s.regs]
-            if s.alloc:
-                tail_text = f'{s.name()}_alloc, *{s.name()};\n{s.name()} = &{s.name()}_alloc;'
-            else:
-                tail_text = f'*{s.name()};'
-            structs_decl.append(
-                "struct " + make_block('\n'.join(fields)) + ' ' + tail_text)
-            self.struct_regs_owner.update({reg: s for reg in s.regs})
-
         for action in self.actions:
             for struct in action.iterate_structs():
-                execute_struct(struct)
-        # TODO: BiInst
-        if self.key_struct is not None:
-            assert self.inst_struct is not None
-            execute_struct(self.key_struct)
-            execute_struct(self.inst_struct, extra=[
-                           f'WV_INST_EXTRA_DECL({self.key_struct.sizeof()})'])
-            structs_decl.append(
-                f"WV_InstHeader({self.key_struct.sizeof()}) *{self.prefetch_name()};")
-        self.global_context.append_pre_text('\n'.join(structs_decl))
+                structs_decl.append(struct.create_aux().declare_type())
+                self.struct_regs_owner.update({reg: struct for reg in struct.regs})
+                self.global_context.required_header_types.add(struct)
 
     def execute_block(self, block: BasicBlock):
         text = f'L{block.block_id}: '
@@ -111,7 +84,7 @@ class BlockRecurseContext:
             assert block.yes_block is not None and block.no_block is not None
             codes_text += f'if ({InstrContext(self, block, Instr([], [], None)).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
         else:
-            codes_text += f'goto L{self.entry_block.block_id}_Ret;'
+            codes_text += self.global_context.write_ret_switch()
         self.global_context.append_text(text + make_block(codes_text))
 
     def content_name(self) -> str:
@@ -121,7 +94,6 @@ class BlockRecurseContext:
         return f'f{self.layer_id}'
 
     def instance_key(self) -> str:
-        assert self.key_struct is not None
         return f'(WV_ByteSlice){{ .cursor = (WV_Byte *)&{self.key_struct.name()}, .length = {self.key_struct.sizeof()} }}'
 
 
