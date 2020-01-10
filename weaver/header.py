@@ -51,12 +51,13 @@ class LocateStruct(ParseAction):
 
 
 class ParseByteSlice(ParseAction):
-    def __init__(self, slice_reg: int):
+    def __init__(self, slice_reg: Reg, byte_length: Value):
         super(ParseByteSlice, self).__init__()
         self.slice_reg = slice_reg
+        self.byte_length = byte_length
 
     def iterate_structs(self) -> Generator[Struct, None, None]:
-        pass
+        yield from []
 
 
 class OptionalActions(ParseAction):
@@ -71,12 +72,14 @@ class OptionalActions(ParseAction):
 
 
 class TaggedParseLoop(ParseAction):
-    def __init__(self, cond: Value, tag: Reg, struct_map: Dict[int, Struct]):
-        tag_max = 1 << reg_aux[tag].byte_len
-        assert all(tag < tag_max for tag in struct_map)
+    def __init__(self, cond: Value, tag: Reg, action_map: Dict[int, List[ParseAction]]):
+        tag_max = 1 << (reg_aux[tag].byte_len * 8)
+        assert all(tag < tag_max for tag in action_map if tag is not None)
         self.cond = cond
         self.tag = tag
-        self.struct_map = struct_map
+        self.action_map = action_map
 
     def iterate_structs(self) -> Generator[Struct, None, None]:
-        yield from self.struct_map.values()
+        for actions in self.action_map.values():
+            for action in actions:
+                yield from action.iterate_structs()

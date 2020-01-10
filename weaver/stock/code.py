@@ -23,7 +23,7 @@ eth: List[Instr] = [
 ]
 
 # IP protocol
-# psm_state = make_reg(1000, 1)
+# header.tcp_data_state = make_reg(1000, 1)
 psm_triggered = make_reg(2000, 1)
 psm_trans = make_reg(2001, 2)
 
@@ -40,7 +40,7 @@ more_frag = Value([header_parser, header.ip_more_frag], '{1}')
 seen_dont_frag = make_reg(1001, 1)
 offset = make_reg(2002, 2)
 payload = make_reg(2003)
-next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
+next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter(True))
 ip: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(instance_table, 'Prefetch', [
@@ -116,7 +116,7 @@ ip: List[Instr] = [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
             Command(runtime, 'Call', [], aux=CallWriter(
                 'count_tcp_payload'), opt_target=True),
-            # next_tcp,
+            next_tcp,
         ]),
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
@@ -124,9 +124,13 @@ ip: List[Instr] = [
 ]
 
 # TCP protocol
-psm_state = make_reg(3000, 1)
 psm_triggered = make_reg(4000, 1)
 psm_trans = make_reg(4001, 2)
+reg_wnd = make_reg(4002, 4)
+reg_wnd_size = make_reg(4003, 4)
+reg_to_active = make_reg(4004, 1)
+reg_data_len = make_reg(4005, 4)
+reg_data = make_reg(4006)
 
 sport = Value([header_parser], 'header->sport')
 dport = Value([header_parser], 'header->dport')
@@ -149,31 +153,13 @@ trans_wv2_fast = Value([], '7')
 trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
-reg_data_len = make_reg(3001, 4)
-reg_data = make_reg(3002)
-reg_fin_seq_1 = make_reg(3003, 4)
-reg_fin_seq_2 = make_reg(3004, 4)
-reg_passive_lwnd = make_reg(3005, 4)
-reg_passive_wscale = make_reg(3006, 1)
-reg_passive_wsize = make_reg(3007, 4)
-reg_active_lwnd = make_reg(3008, 4)
-reg_active_wscale = make_reg(3009, 1)
-reg_active_wsize = make_reg(3010, 4)
-reg_seen_ack = make_reg(3011, 1)
-reg_seen_fin = make_reg(3012, 1)
-reg_wv2_expr = make_reg(3013, 1)
-reg_wv2_fast_expr = make_reg(3014, 1)
-reg_wv4_expr = make_reg(3015, 1)
-reg_wnd = make_reg(4002, 4)
-reg_wnd_size = make_reg(4003, 4)
-reg_to_active = make_reg(4004, 1)
-value_payload = Value([header_parser], 'header_meta->payload')
+value_payload = Value([header_parser], 'header_meta->payload', PayloadWriter())
 value_payload_len = Value([header_parser], 'header_meta->payload_length')
-value_seq_num = Value([header_parser], 'header->seq_num')
-value_ack = Value([header_parser], 'header->ack')
-value_ack_num = Value([header_parser], 'header->ack_num')
-value_syn = Value([header_parser], 'header->syn')
-value_fin = Value([header_parser], 'header->fin')
+value_seq_num = Value([header_parser, header.tcp_seq], '{1}')
+value_ack = Value([header_parser, header.tcp_ack], '{1}')
+value_ack_num = Value([header_parser, header.tcp_acknum], '{1}')
+value_syn = Value([header_parser, header.tcp_syn], '{1}')
+value_fin = Value([header_parser, header.tcp_fin], '{1}')
 value_to_active = Value([reg_to_active], '{0}')
 value_to_passive = Value(
     [reg_to_active], 'not {0}', TemplateValueWriter('!{0}'))
@@ -190,10 +176,12 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
                   this_wsize: int) -> List[Instr]:
     return [
         If(Value([header_parser], 'HeaderContain(tcp_ws)'), [
-            SetValue(that_wscale, Value([header_parser], 'header->ws_value')),
+            SetValue(that_wscale, Value(
+                [header_parser, header.tcp_ws_value], '{1}')),
         ]),
-        SetValue(that_wsize, Value([header_parser], 'header->window_size')),
-        SetValue(that_lwnd, Value([header_parser], 'header->ack_num')),
+        SetValue(that_wsize, Value(
+            [header_parser, header.tcp_wndsize], '{1}')),
+        SetValue(that_lwnd, value_ack_num),
         SetValue(reg_wnd, Value([this_lwnd], '{0}')),
         SetValue(reg_wnd_size, Value([this_wsize, this_wscale], '{0} << {1}')),
     ]
@@ -204,93 +192,79 @@ def to_rst(from_state: Value):
     trans = AggValue([from_state], f'{{0}} + {trans_wv4}')
     return If(Value([header_parser], 'header->rst'), [
         SetValue(psm_trans, trans),
-        SetValue(psm_state, to_state),
+        SetValue(header.tcp_data_state, to_state),
         SetValue(psm_triggered, yes),
     ])
 
 
 tcp: List[Instr] = [
-    Command(header_parser, 'Parse', []),
-    If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})'), [
-        Command(instance_table, 'Fetch', [saddr, sport, daddr, dport]),
+    Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
+    Command(instance_table, 'Prefetch', [
+            saddr, sport, daddr, dport], aux=PrefetchInstWriter()),
+    If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})', aux=InstExistWriter()), [
+        Command(instance_table, 'Fetch', [
+                saddr, sport, daddr, dport], aux=FetchInstWriter()),
         SetValue(reg_to_active, Value([instance_table], 'InstToActive()')),
-        SetValue(psm_state, Value([instance_table], 'inst->state')),
-        SetValue(reg_fin_seq_1, Value(
-            [instance_table], 'inst->reg_fin_seq_1')),
-        SetValue(reg_fin_seq_2, Value(
-            [instance_table], 'inst->reg_fin_seq_2')),
-        SetValue(reg_active_wsize, Value(
-            [instance_table], 'inst->reg_active_wsize')),
-        SetValue(reg_active_wscale, Value(
-            [instance_table], 'inst->reg_active_wscale')),
-        SetValue(reg_active_lwnd, Value(
-            [instance_table], 'inst->reg_active_lwnd')),
-        SetValue(reg_passive_wsize, Value(
-            [instance_table], 'inst->reg_passive_wsize')),
-        SetValue(reg_passive_wscale, Value(
-            [instance_table], 'inst->reg_passive_wscale')),
-        SetValue(reg_passive_lwnd, Value(
-            [instance_table], 'inst->reg_passive_lwnd')),
-        SetValue(reg_seen_ack, Value([instance_table], 'inst->reg_seen_ack')),
-        SetValue(reg_seen_fin, Value([instance_table], 'inst->reg_seen_fin')),
-        SetValue(reg_wv2_expr, Value([instance_table], 'inst->reg_wv2_expr')),
-        SetValue(reg_wv2_fast_expr, Value(
-            [instance_table], 'inst->reg_wv2_fast_expr')),
-        SetValue(reg_wv4_expr, Value([instance_table], 'inst->reg_wv4_expr')),
     ], [
         Command(instance_table, 'Create', [
-                saddr, sport, daddr, dport], opt_target=True),
+                saddr, sport, daddr, dport], opt_target=True, aux=CreateInstWriter()),
         SetValue(reg_to_active, no),
-        SetValue(psm_state, CLOSED),
-        SetValue(reg_fin_seq_1, no),
-        SetValue(reg_fin_seq_2, no),
-        SetValue(reg_active_wsize, Value([], '(1 << 32) - 1')),
-        SetValue(reg_active_wscale, no),
-        SetValue(reg_active_lwnd, no),
-        SetValue(reg_passive_wsize, Value([], '(1 << 32) - 1')),
-        SetValue(reg_passive_wscale, no),
-        SetValue(reg_passive_lwnd, no),
-        SetValue(reg_seen_ack, no),
-        SetValue(reg_seen_fin, no),
-        SetValue(reg_wv2_expr, no),
-        SetValue(reg_wv2_fast_expr, no),
-        SetValue(reg_wv4_expr, no),
+        SetValue(header.tcp_data_state, CLOSED),
+        SetValue(header.tcp_data_fin_seq_1, no),
+        SetValue(header.tcp_data_fin_seq_2, no),
+        SetValue(header.tcp_data_active_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(header.tcp_data_active_wscale, no),
+        SetValue(header.tcp_data_active_lwnd, no),
+        SetValue(header.tcp_data_passive_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(header.tcp_data_passive_wscale, no),
+        SetValue(header.tcp_data_passive_lwnd, no),
+        SetValue(header.tcp_data_seen_ack, no),
+        SetValue(header.tcp_data_seen_fin, no),
+        SetValue(header.tcp_data_wv2_expr, no),
+        SetValue(header.tcp_data_wv2_fast_expr, no),
+        SetValue(header.tcp_data_wv4_expr, no),
     ]),
     If(value_ack, assign_data(value_payload, value_payload_len), [
         If(value_syn, assign_data(no, Value([], '1')), [
             If(value_fin, assign_data(value_payload, AggValue([value_payload_len], '{0} + 1')) + [
-                If(EqualTest(psm_state, EST), [
-                    SetValue(reg_fin_seq_1, AggValue(
+                If(EqualTest(header.tcp_data_state, EST), [
+                    SetValue(header.tcp_data_fin_seq_1, AggValue(
                         [value_seq_num, value_payload_len], '{0} + {1}')),
                 ], [
-                    SetValue(reg_fin_seq_2, value_seq_num),
+                    SetValue(header.tcp_data_fin_seq_2, value_seq_num),
                 ]),
             ]),
         ]),
     ]),
     If(value_to_active,
-       update_window(reg_passive_lwnd, reg_passive_wscale, reg_passive_wsize, reg_active_lwnd, reg_active_wscale,
-                     reg_active_wsize)),
+       update_window(header.tcp_data_passive_lwnd, header.tcp_data_passive_wscale, header.tcp_data_passive_wsize, header.tcp_data_active_lwnd, header.tcp_data_active_wscale,
+                     header.tcp_data_active_wsize)),
     If(value_to_passive,
-       update_window(reg_active_lwnd, reg_active_wscale, reg_active_wsize, reg_passive_lwnd, reg_passive_wscale,
-                     reg_passive_wsize)),
-    Command(sequence, 'InsertMeta',
-            [Value([instance_table]), value_seq_num, Value([reg_data_len], '{0}'),
-             Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')],
-            opt_target=True),
-    Command(sequence, 'InsertData', [Value([instance_table]), Value(
-        [reg_data], '{0}')], opt_target=True),
+       update_window(header.tcp_data_active_lwnd, header.tcp_data_active_wscale, header.tcp_data_active_wsize, header.tcp_data_passive_lwnd, header.tcp_data_passive_wscale,
+                     header.tcp_data_passive_wsize)),
+    Command(sequence, 'InsertMeta', [
+        Value([instance_table]),
+        value_seq_num,
+        Value([reg_data], '{0}'),
+        Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')
+    ],
+        opt_target=True, aux=InsertMetaWriter()),
+    Command(sequence, 'InsertData', [
+        Value([instance_table]),
+        value_seq_num,
+        Value([reg_data], '{0}')
+    ], opt_target=True, aux=InsertDataWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, CLOSED), [
+        If(EqualTest(header.tcp_data_state, CLOSED), [
             If(AggValue([value_syn], '{0} == 0'), [
                 SetValue(psm_trans, trans_fake),
-                SetValue(psm_state, TERMINATE),
+                SetValue(header.tcp_data_state, TERMINATE),
                 SetValue(psm_triggered, yes),
             ]),
             If(AggValue([value_syn, value_ack], '{0} == 1 and {1} == 0', TemplateValueWriter('{0} && !{1}')), [
                 SetValue(psm_trans, trans_hs1),
-                SetValue(psm_state, SYN_SENT),
+                SetValue(header.tcp_data_state, SYN_SENT),
                 SetValue(psm_triggered, yes),
             ]),
             to_rst(CLOSED),
@@ -298,11 +272,11 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, SYN_SENT), [
+        If(EqualTest(header.tcp_data_state, SYN_SENT), [
             If(AggValue([value_to_active, value_syn, value_ack], '{0} and {1} == 1 and {2} == 1',
                         TemplateValueWriter('{0} && {1} && !{2}')), [
                 SetValue(psm_trans, trans_hs2),
-                SetValue(psm_state, SYN_RECV),
+                SetValue(header.tcp_data_state, SYN_RECV),
                 SetValue(psm_triggered, yes),
             ]),
             to_rst(SYN_SENT),
@@ -310,14 +284,14 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, SYN_RECV), [
+        If(EqualTest(header.tcp_data_state, SYN_RECV), [
             If(value_ack, [
-                SetValue(reg_seen_ack, yes),
+                SetValue(header.tcp_data_seen_ack, yes),
             ]),
-            If(EqualTest(reg_seen_ack, yes), [
+            If(EqualTest(header.tcp_data_seen_ack, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_hs3),
-                    SetValue(psm_state, EST),
+                    SetValue(header.tcp_data_state, EST),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
@@ -326,19 +300,19 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, EST), [
+        If(EqualTest(header.tcp_data_state, EST), [
             If(AggValue([value_fin], '{0} == 0'), [
                 SetValue(psm_trans, trans_buffering),
-                SetValue(psm_state, EST),
+                SetValue(header.tcp_data_state, EST),
                 SetValue(psm_triggered, yes),
             ]),
             If(value_fin, [
-                SetValue(reg_seen_fin, yes),
+                SetValue(header.tcp_data_seen_fin, yes),
             ]),
-            If(EqualTest(reg_seen_fin, yes), [
+            If(EqualTest(header.tcp_data_seen_fin, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv1),
-                    SetValue(psm_state, FIN_WAIT),
+                    SetValue(header.tcp_data_state, FIN_WAIT),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
@@ -347,26 +321,26 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, FIN_WAIT), [
-            If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
+        If(EqualTest(header.tcp_data_state, FIN_WAIT), [
+            If(AggValue([value_ack, value_fin, Value([header.tcp_data_fin_seq_1], '{}'), value_ack_num],
                         '{0} and {1} == 0 and {2} + 1 == {3}', TemplateValueWriter('{0} && !{1} && {2} + 1 == {3}')), [
-                SetValue(reg_wv2_expr, yes),
+                SetValue(header.tcp_data_wv2_expr, yes),
             ]),
-            If(EqualTest(reg_wv2_expr, yes), [
+            If(EqualTest(header.tcp_data_wv2_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv2),
-                    SetValue(psm_state, CLOSE_WAIT),
+                    SetValue(header.tcp_data_state, CLOSE_WAIT),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
-            If(AggValue([value_ack, value_fin, Value([reg_fin_seq_1], '{}'), value_ack_num],
+            If(AggValue([value_ack, value_fin, Value([header.tcp_data_fin_seq_1], '{}'), value_ack_num],
                         '{0} and {1} and {2} + 1 == {3}', TemplateValueWriter('{0} && {1} && {2} + 1 == {3}')), [
-                SetValue(reg_wv2_fast_expr, yes),
+                SetValue(header.tcp_data_wv2_fast_expr, yes),
             ]),
-            If(EqualTest(reg_wv2_fast_expr, yes), [
+            If(EqualTest(header.tcp_data_wv2_fast_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv2_fast),
-                    SetValue(psm_state, LAST_ACK),
+                    SetValue(header.tcp_data_state, LAST_ACK),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
@@ -375,10 +349,10 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, CLOSE_WAIT), [
+        If(EqualTest(header.tcp_data_state, CLOSE_WAIT), [
             If(value_fin, [
                 SetValue(psm_trans, trans_wv3),
-                SetValue(psm_state, LAST_ACK),
+                SetValue(header.tcp_data_state, LAST_ACK),
                 SetValue(psm_triggered, yes),
             ]),
             to_rst(CLOSE_WAIT),
@@ -386,15 +360,15 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_triggered, no), [
-        If(EqualTest(psm_state, LAST_ACK), [
-            If(AggValue([value_ack, Value([reg_fin_seq_2], '{}'), value_ack_num], '{0} and {1} + 1 == {2}',
+        If(EqualTest(header.tcp_data_state, LAST_ACK), [
+            If(AggValue([value_ack, Value([header.tcp_data_fin_seq_2], '{}'), value_ack_num], '{0} and {1} + 1 == {2}',
                         TemplateValueWriter('{0} && {1} + 1 == {2}')), [
-                SetValue(reg_wv4_expr, yes),
+                SetValue(header.tcp_data_wv4_expr, yes),
             ]),
-            If(EqualTest(reg_wv4_expr, yes), [
+            If(EqualTest(header.tcp_data_wv4_expr, yes), [
                 If(ready, [
                     SetValue(psm_trans, trans_wv4),
-                    SetValue(psm_state, TERMINATE),
+                    SetValue(header.tcp_data_state, TERMINATE),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
@@ -403,43 +377,16 @@ tcp: List[Instr] = [
         ]),
     ]),
     If(EqualTest(psm_trans, trans_buffering), [
-        Command(sequence, 'Assemble', [], opt_target=True),
+        Command(sequence, 'Assemble', [],
+                opt_target=True, aux=SeqAssembleWriter()),
     ]),
     # there is (probably) no next layer, so let's fake a custom event
-    If(EqualTest(psm_state, EST), [
-        Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True),
+    If(EqualTest(header.tcp_data_state, EST), [
+        Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True, aux=CallWriter(
+            'handle_est_payload', [reg_data_len])),
     ]),
-    Command(instance_table, 'Set{state}', [Value([psm_state], '{0}')]),
-    Command(instance_table, 'Set{reg_data_len}',
-            [Value([reg_data_len], '{0}')]),
-    Command(instance_table, 'Set{reg_data}', [Value([reg_data], '{0}')]),
-    Command(instance_table, 'Set{reg_fin_seq_1}',
-            [Value([reg_fin_seq_1], '{0}')]),
-    Command(instance_table, 'Set{reg_fin_seq_2}',
-            [Value([reg_fin_seq_2], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_lwnd}', [
-            Value([reg_passive_lwnd], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_wscale}', [
-            Value([reg_passive_wscale], '{0}')]),
-    Command(instance_table, 'Set{reg_passive_wsize}', [
-            Value([reg_passive_wsize], '{0}')]),
-    Command(instance_table, 'Set{reg_active_lwnd}', [
-            Value([reg_active_lwnd], '{0}')]),
-    Command(instance_table, 'Set{reg_active_wscale}', [
-            Value([reg_active_wscale], '{0}')]),
-    Command(instance_table, 'Set{reg_active_wsize}', [
-            Value([reg_active_wsize], '{0}')]),
-    Command(instance_table, 'Set{reg_seen_ack}',
-            [Value([reg_seen_ack], '{0}')]),
-    Command(instance_table, 'Set{reg_seen_fin}',
-            [Value([reg_seen_fin], '{0}')]),
-    Command(instance_table, 'Set{reg_wv2_expr}',
-            [Value([reg_wv2_expr], '{0}')]),
-    Command(instance_table, 'Set{reg_wv2_fast_expr}', [
-            Value([reg_wv2_fast_expr], '{0}')]),
-    Command(instance_table, 'Set{reg_wv4_expr}',
-            [Value([reg_wv4_expr], '{0}')]),
-    If(EqualTest(psm_state, TERMINATE), [
-        Command(instance_table, 'Destroy', [], opt_target=True),
+    If(EqualTest(header.tcp_data_state, TERMINATE), [
+        Command(instance_table, 'Destroy', [],
+                opt_target=True, aux=DestroyInstWriter()),
     ])
 ]

@@ -3,12 +3,11 @@ from weaver.auxiliary import reg_aux
 from weaver.code import AggValue, If, SetValue, Command
 from weaver.stock.reg import instance_table, sequence, runtime, header_parser
 from weaver.util import make_block
-from weaver.header import LocateStruct
+from weaver.header import *
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
     from weaver.writer_context import ValueContext, InstrContext
-    from weaver.header import ParseAction
     from weaver.code import Reg
 
 
@@ -91,7 +90,10 @@ class CreateInstWriter(InstrWriter):
         inst_aux = context.recurse_context.inst_struct.create_aux()
         # TODO: BiInst
         return (
-            f'tommy_hashdyn_insert(&runtime->hash_{lid}, &{pre}->node, {pre}, hash(&{pre}->k, sizeof({context.recurse_context.key_struct_name()})));\n'
+            f'tommy_hashdyn_insert(\n' + 
+            f'  &runtime->hash_{lid}, &{pre}->node, {pre}, hash(&{pre}->k,\n' + 
+            f'  sizeof({context.recurse_context.key_struct_name()}))\n' + 
+            f');\n'
             f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
             f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
             f'{pre} = malloc({inst_aux.sizeof()});\n'
@@ -111,7 +113,8 @@ class InsertMetaWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        assert len(context.instr.args) == 3
+        # TODO: BiInst
+        # assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
         offset, data = context.instr.args[1], context.instr.args[2]
@@ -122,7 +125,8 @@ class InsertDataWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        assert len(context.instr.args) == 3
+        # TODO: BiInst
+        # assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
         offset, data = context.instr.args[1], context.instr.args[2]
@@ -178,20 +182,37 @@ class ParseHeaderWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == header_parser
-        return self.write_actions(context.recurse_context.actions)
+        return 'saved = current;\n' + self.write_actions(context.recurse_context.actions, context)
 
-    def write_actions(self, actions: List[ParseAction]) -> str:
-        text = ''
+    def write_actions(self, actions: List[ParseAction], context: InstrContext) -> str:
+        lines = []
         for action in actions:
             for struct in action.iterate_structs():
-                text += f'{struct.create_aux().name()} = NULL;\n'
+                lines.append(f'{struct.create_aux().name()} = NULL;')
             if isinstance(action, LocateStruct):
-                text += f'{action.struct.create_aux().name()} = (WV_Any)current.cursor;\n'
-                text += f'current = WV_SliceAfter(current, {action.struct.byte_length});'
+                lines.append(f'{action.struct.create_aux().name()} = (WV_Any)current.cursor;')
+                lines.append(f'current = WV_SliceAfter(current, {action.struct.byte_length});')
+            elif isinstance(action, ParseByteSlice):
+                assert reg_aux[action.slice_reg].byte_len is None
+                reg_text = reg_aux.write(context, action.slice_reg)
+                lines.append(f'{reg_text}.cursor = current.cursor;')
+                lines.append(f'{reg_text}.length = {context.write_value(action.byte_length)};')
+                lines.append(f'current = WV_SliceAfter(current, {reg_text}.length);')
+            elif isinstance(action, TaggedParseLoop):
+                assert reg_aux[action.tag].byte_len == 1  # no ntoh issue
+                tag_text = reg_aux.write(context, action.tag)
+                lines.append(f'while ({context.write_value(action.cond)}) ' + make_block('\n'.join([
+                    f'{tag_text} = (({reg_aux[action.tag].type_decl()} *)current.cursor)[0];',
+                    f'current = WV_SliceAfter(current, {reg_aux[action.tag].byte_len});',
+                    f'switch ({tag_text}) ' + make_block('\n'.join(
+                        (f'case {match}: ' if match is not None else 'default: ') + 
+                        make_block(self.write_actions(actions, context) + '\ncontinue;')
+                        for match, actions in action.action_map.items()
+                    )),
+                ])))
             else:
-                # TODO
-                raise NotImplementedError()
-        return text
+                assert False
+        return '\n'.join(lines)
 
 
 class CallWriter(InstrWriter):
@@ -210,3 +231,18 @@ class CallWriter(InstrWriter):
 class PayloadWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         return 'current'
+
+
+class PayloadLengthWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return 'current->length'
+
+
+class ParsedLengthWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return 'current.cursor - saved.cursor'
+
+
+class TotalLengthWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return 'saved.length'

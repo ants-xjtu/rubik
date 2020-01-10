@@ -68,7 +68,7 @@ class GlobalContext:
                 self.write_inst_decl() + '\n\n' +
                 self.write_content_vars() + '\n\n' +
                 'WV_U8 status = 0;\n' +
-                'WV_ByteSlice current = packet;\n'
+                'WV_ByteSlice current = packet, saved;\n'
                 'WV_U8 ret_target = 0;\n'
                 f'goto L{global_entry.block_id};\n\n' +
                 self.text + '\n\n' +
