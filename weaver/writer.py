@@ -91,8 +91,9 @@ class CreateInstWriter(InstrWriter):
         inst_aux = context.recurse_context.inst_struct.create_aux()
         # TODO: BiInst
         return (
-            f'tommy_hashdyn_insert(&runtime->hash_{lid}, &{pre}->node, &{pre}, hash(&{pre}->k, sizeof({context.recurse_context.key_struct_name()})));\n'
-            f'{inst_aux.name()} = {pre};\n'
+            f'tommy_hashdyn_insert(&runtime->hash_{lid}, &{pre}->node, {pre}, hash(&{pre}->k, sizeof({context.recurse_context.key_struct_name()})));\n'
+            f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
+            f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
             f'{pre} = malloc({inst_aux.sizeof()});\n'
             f'memset({pre}, 0, sizeof({inst_aux.typedef()}));'
         )
@@ -113,26 +114,26 @@ class InsertMetaWriter(InstrWriter):
         assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
-        offset, length = context.instr.args[1], context.instr.args[2]
-        return f'WV_InsertMeta(&{context.recurse_context.inst_struct.create_aux().name()}->seq, {context.write_value(offset)}, {context.write_value(length)});'
+        offset, data = context.instr.args[1], context.instr.args[2]
+        return f'WV_InsertMeta(&{context.recurse_context.prefetch_name()}->seq, {context.write_value(offset)}, {context.write_value(data)});'
 
 
 class InsertDataWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        assert len(context.instr.args) == 2
+        assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
-        data = context.instr.args[1]
-        return f'WV_InsertData(&{context.recurse_context.inst_struct.create_aux().name()}->seq, {context.write_value(data)});'
+        offset, data = context.instr.args[1], context.instr.args[2]
+        return f'WV_InsertData(&{context.recurse_context.prefetch_name()}->seq, {context.write_value(offset)}, {context.write_value(data)});'
 
 
 class SeqReadyWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         assert sequence in context.value.regs
         assert context.instr_context.recurse_context.inst_struct is not None
-        return f'WV_SeqReady(&{context.instr_context.recurse_context.inst_struct.create_aux().name()}->seq)'
+        return f'WV_SeqReady(&{context.instr_context.recurse_context.prefetch_name()}->seq)'
 
 
 class SeqAssembleWriter(InstrWriter):
@@ -140,7 +141,7 @@ class SeqAssembleWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
         assert context.recurse_context.inst_struct is not None
-        return f'{context.recurse_context.content_name()} = WV_SeqAssemble(&{context.recurse_context.inst_struct.create_aux().name()}->seq);'
+        return f'{context.recurse_context.content_name()} = WV_SeqAssemble(&{context.recurse_context.inst_struct.create_aux().name()}->seq, &nf{context.recurse_context.layer_id});'
 
 
 class DestroyInstWriter(InstrWriter):
@@ -148,9 +149,12 @@ class DestroyInstWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
         lid = context.recurse_context.layer_id
-        pre_k = f'runtime->prealloc_{lid}->k'
-        return f'{context.recurse_context.prefetch_name()} = tommy_hashdyn_remove(&runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{pre_k}, hash(&{pre_k}, sizeof({context.recurse_context.key_struct_name()})));'
-
+        prefetch = context.recurse_context.prefetch_name()
+        return (
+            f'tommy_hashdyn_remove(&runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch}, hash(&{prefetch}->k, sizeof({context.recurse_context.key_struct_name()})));\n'
+            f'WV_CleanSeq(&{prefetch}->seq);\n'
+            f'free({prefetch});'
+        )
 
 class NextWriter(InstrWriter):
     def __init__(self, content: bool = False):
@@ -164,7 +168,7 @@ class NextWriter(InstrWriter):
         self_index = context.recurse_context.global_context.next_index[context.instr]
         return (
             ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
-            'WV_U8 old_target = ret_target;\n' + 
+            'WV_U8 old_target = ret_target;\n' +
             f'ret_target = {self_index}; goto L{next_entry}; NI{self_index}_Ret:\n' +
             'ret_target = old_target;'
         )

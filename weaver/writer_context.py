@@ -72,9 +72,12 @@ class GlobalContext:
                 'WV_U8 ret_target = 0;\n'
                 f'goto L{global_entry.block_id};\n\n' +
                 self.text + '\n\n' +
-                f'NI0_Ret: {make_block("return status;")}'
+                f'NI0_Ret: {make_block(self.write_finalize_block())}'
             )
         )
+
+    def write_finalize_block(self):
+        return '\n'.join([f'if (nf{i}) free(nf{i});' for i in range(self.layer_count)] + ['return status;'])
 
     def write_header_types_decl(self) -> str:
         return '\n'.join(
@@ -91,7 +94,7 @@ class GlobalContext:
             for lid, struct in self.required_inst.items())
 
     def write_content_vars(self) -> str:
-        return '\n'.join(f'WV_ByteSlice c{i};' for i in range(self.layer_count))
+        return '\n'.join(f'WV_ByteSlice c{i};\nWV_Byte *nf{i} = NULL;' for i in range(self.layer_count))
 
     @staticmethod
     def write_regs() -> str:
@@ -162,7 +165,7 @@ class GlobalContext:
         return '\n'.join([runtime_struct, alloc_runtime, free_runtime, get_profile])
 
     def write_template(self) -> str:
-        text = '#include "weaver.h"\n\n'
+        text = '#include "weaver.h"'
         for name, regs in self.required_calls.items():
             if regs == []:
                 call_text = f'WV_U8 {name}() '
@@ -172,8 +175,8 @@ class GlobalContext:
                     call_text += f'\n  {reg_aux[reg].type_decl()} _{reg},'
                 call_text = call_text[:-1]  # eat postfix comma
                 call_text += '\n) '
-            call_text += make_block('//') + '\n\n'
-            text += call_text
+            call_text += make_block('//')
+            text += '\n\n' + call_text
         return text
 
     @staticmethod

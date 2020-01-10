@@ -12,14 +12,12 @@ typedef uint64_t WV_U64;
 typedef double WV_F;
 typedef void *WV_Any;
 
-static inline WV_U16 WV_HToN16(WV_U16 x) {
-    return htons(x);
+static inline WV_U16 WV_NToH16(WV_U16 x) {
+    return ntohs(x);
 }
-
-static inline WV_U32 WV_HToN32(WV_U32 x) {
-    return htonl(x);
+static inline WV_U32 WV_NToH32(WV_U32 x) {
+    return ntohl(x);
 }
-
 
 typedef struct _WV_ByteSlice {
     const WV_Byte *cursor;

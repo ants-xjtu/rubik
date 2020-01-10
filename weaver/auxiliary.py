@@ -118,7 +118,7 @@ class DataStructAux(HeaderStructAux):
             inst_struct_text = 'typedef struct ' + make_block('\n'.join(
                 [
                     f'{DataStructAux.key_struct_type(layer_id)} k;', 
-                    'tommy_node node;'
+                    'tommy_node node;',
                     'WV_Seq seq;'
                 ] + 
                 [reg_aux.decl(reg) for reg in self.struct.regs]

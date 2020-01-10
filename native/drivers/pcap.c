@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <signal.h>
-#include <pcap.h>
 #include <stdlib.h>
-#include "weaver.h"
+#include <string.h>
+
+#include <pcap.h>
+#include <weaver.h>
 
 WV_U8 ctrl_c = 0;
 
@@ -31,11 +33,19 @@ void proc(WV_Byte *user, const struct pcap_pkthdr *pcap_header, const WV_Byte *p
 }
 
 int main(int argc, char *argv[]) {
-    if (argc <= 1) {
+    char *pcap_filename = NULL;
+    WV_U8 no_loop = 0;
+    for (int i = 1; i < argc; i += 1) {
+        if (strcmp(argv[i], "--noloop") == 0) {
+            no_loop = 1;
+        } else {
+            pcap_filename = argv[i];
+        }
+    }
+    if (pcap_filename == NULL) {
         printf("no pcap file\n");
         return 0;
     }
-    char *pcap_filename = argv[1];
 
     WV_Runtime *runtime;
     if (!(runtime = WV_AllocRuntime())) {
@@ -57,7 +67,7 @@ int main(int argc, char *argv[]) {
     for (;;) {
         pcap_loop(pcap_packets, -1, proc, (void *)&user);
         pcap_close(pcap_packets);
-        if (ctrl_c) {
+        if (ctrl_c || no_loop) {
             break;
         }
         pcap_packets = pcap_open_offline(pcap_filename, errbuf);

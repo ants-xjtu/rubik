@@ -71,10 +71,10 @@ ip: List[ParseAction] = [
     LocateStruct(ip_header),
 ]
 ip_state = 20017
-ip_seen_dont_frag = 20018
+ip_expr1 = 20018
 ip_data = Struct([
     make_reg(ip_state, 1),
-    make_reg(ip_seen_dont_frag, 1),
+    make_reg(ip_expr1, 1),
 ], DataStructAuxCreator([
     ip_src,
     ip_dst,

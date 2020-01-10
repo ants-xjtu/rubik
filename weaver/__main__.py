@@ -4,7 +4,7 @@ from weaver.code import BasicBlock
 from weaver.writer_context import GlobalContext
 
 b1 = BasicBlock.from_codes(eth_code).optimize()
-b2 = BasicBlock.from_codes(ip_code).optimize()
+b2 = BasicBlock.from_codes(ip_code)#.optimize()
 cxt = GlobalContext({next_ip: b2})
 cxt.execute_block_recurse(b1, eth_action)
 cxt.execute_block_recurse(b2, ip_action, ip_data)

@@ -17,7 +17,7 @@ eth: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(runtime, 'Call', [Value([header.eth_type])],
             aux=CallWriter('check_eth_type', [header.eth_type])),
-    If(Value([header_parser, header.eth_type], '{1} == WV_HToN16(0x0800)'), [
+    If(Value([header_parser, header.eth_type], 'WV_NToH16({1}) == 0x0800'), [
         next_ip,
     ]),
 ]
@@ -51,19 +51,24 @@ ip: List[Instr] = [
         Command(instance_table, 'Create', [],
                 opt_target=True, aux=CreateInstWriter()),
         SetValue(header.ip_state, DUMP),
-        SetValue(header.ip_seen_dont_frag, no),
+        SetValue(header.ip_expr1, no),
     ]),
     SetValue(offset, Value([header_parser, header.ip_offset1,
                             header.ip_offset2], '(({1} << 8) + {2}) << 3')),
     SetValue(payload,
-             AggValue([Value([header_parser, header.ip_len], '{1}'), Value([header_parser], aux=PayloadWriter())],
-                      '(WV_ByteSlice){{ .cursor = {1}.cursor, .length = {0} }}')),
+             AggValue([
+                 Value([header_parser, header.ip_len], '{1}'),
+                 Value([header_parser, header.ip_ihl], '{1}'),
+                 Value([header_parser], aux=PayloadWriter())
+             ],
+                 '(WV_ByteSlice){{ .cursor = {2}.cursor, .length = WV_NToH16({0}) - ({1} << 2) }}')),
     Command(sequence, 'InsertMeta',
             [Value([instance_table]), Value([offset], '{0}'),
              Value([payload], '{0}')],
             opt_target=True, aux=InsertMetaWriter()),
     Command(sequence, 'InsertData',
-            [Value([instance_table]), Value([payload], '{0}')],
+            [Value([instance_table]), Value(
+                [offset], '{0}'), Value([payload], '{0}')],
             opt_target=True, aux=InsertDataWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
@@ -83,17 +88,17 @@ ip: List[Instr] = [
     ]),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.ip_state, FRAG), [
-            If(dont_frag, [
-                SetValue(header.ip_seen_dont_frag, yes),
+            If(AggValue([more_frag], 'not {0}', AggValueWriter('!{0}')), [
+                SetValue(header.ip_expr1, yes),
             ]),
-            If(EqualTest(header.ip_seen_dont_frag, yes), [
+            If(EqualTest(header.ip_expr1, yes), [
                 If(ready, [
                     SetValue(psm_trans, last),
                     SetValue(header.ip_state, DUMP),
                     SetValue(psm_triggered, yes),
                 ]),
             ]),
-            If(AggValue([EqualTest(header.ip_seen_dont_frag, no), ready], '{0} or {1}', AggValueWriter('{0} || {1}')), [
+            If(AggValue([EqualTest(header.ip_expr1, no), ready], '{0} or not {1}', AggValueWriter('{0} || !{1}')), [
                 SetValue(psm_trans, frag),
                 SetValue(header.ip_state, FRAG),
                 SetValue(psm_triggered, yes),
@@ -105,9 +110,12 @@ ip: List[Instr] = [
         Command(sequence, 'Assemble', [],
                 opt_target=True, aux=SeqAssembleWriter()),
     ]),
+    Command(runtime, 'Call', [Value([header.ip_state], '{0}'), Value([psm_trans], '{0}')], aux=CallWriter(
+        'dump_ip', [header.ip_state, psm_trans]), opt_target=True),
     If(EqualTest(header.ip_state, DUMP), [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
-            Command(runtime, 'Call', [], aux=CallWriter('count_tcp_payload'), opt_target=True),
+            Command(runtime, 'Call', [], aux=CallWriter(
+                'count_tcp_payload'), opt_target=True),
             # next_tcp,
         ]),
         Command(instance_table, 'Destroy', [],
