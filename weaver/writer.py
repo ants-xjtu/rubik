@@ -3,6 +3,7 @@ from weaver.auxiliary import reg_aux
 from weaver.code import AggValue, If, SetValue, Command
 from weaver.stock.reg import instance_table, sequence, runtime, header_parser
 from weaver.util import make_block
+# pylint: disable = unused-wildcard-import
 from weaver.header import *
 from typing import TYPE_CHECKING, List
 
@@ -76,7 +77,12 @@ class PrefetchInstWriter(InstrWriter):
         pre_k = f'runtime->{context.recurse_context.prealloc()}->k'
         for reg in context.recurse_context.inst_struct.create_aux().key_regs:
             text += f'{pre_k}._{reg} = {reg_aux.write(context, reg)};\n'
-        text += f'{context.recurse_context.prefetch_name()} = tommy_hashdyn_search(&runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{pre_k}, hash(&{pre_k}, sizeof({context.recurse_context.key_struct_name()})));'
+        text += (
+            f'{context.recurse_context.prefetch_name()} = tommy_hashdyn_search(\n'
+            f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{pre_k},\n'
+            f'  hash(&{pre_k}, sizeof({context.recurse_context.key_struct_name()}))\n'
+            f');'
+        )
         return text
 
 
@@ -91,8 +97,8 @@ class CreateInstWriter(InstrWriter):
         # TODO: BiInst
         return (
             f'tommy_hashdyn_insert(\n' + 
-            f'  &runtime->hash_{lid}, &{pre}->node, {pre}, hash(&{pre}->k,\n' + 
-            f'  sizeof({context.recurse_context.key_struct_name()}))\n' + 
+            f'  &runtime->hash_{lid}, &{pre}->node, {pre},\n' + 
+            f'  hash(&{pre}->k, sizeof({context.recurse_context.key_struct_name()}))\n' + 
             f');\n'
             f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
             f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
@@ -155,7 +161,10 @@ class DestroyInstWriter(InstrWriter):
         lid = context.recurse_context.layer_id
         prefetch = context.recurse_context.prefetch_name()
         return (
-            f'tommy_hashdyn_remove(&runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch}, hash(&{prefetch}->k, sizeof({context.recurse_context.key_struct_name()})));\n'
+            f'tommy_hashdyn_remove(\n'
+            f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch},\n'
+            f'  hash(&{prefetch}->k, sizeof({context.recurse_context.key_struct_name()}))\n'
+            f');\n'
             f'WV_CleanSeq(&{prefetch}->seq);\n'
             f'free({prefetch});'
         )
@@ -168,12 +177,12 @@ class NextWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
+        context.recurse_context.global_context.required_return_blocks.add(context.block)
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
-        self_index = context.recurse_context.global_context.next_index[context.instr]
         return (
             ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
-            'WV_U8 old_target = ret_target;\n' +
-            f'ret_target = {self_index}; goto L{next_entry}; NI{self_index}_Ret:\n' +
+            'WV_I32 old_target = ret_target;\n' +
+            f'ret_target = {context.block.block_id}; goto L{next_entry}; NI{context.block.block_id}_Ret:\n' +
             'ret_target = old_target;'
         )
 

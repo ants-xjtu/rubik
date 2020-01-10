@@ -9,6 +9,7 @@ typedef uint8_t WV_U8;
 typedef uint16_t WV_U16;
 typedef uint32_t WV_U32;
 typedef uint64_t WV_U64;
+typedef int32_t WV_I32;
 typedef double WV_F;
 typedef void *WV_Any;
 

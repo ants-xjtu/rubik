@@ -12,14 +12,12 @@ if TYPE_CHECKING:
 
 class GlobalContext:
     def __init__(self, next_table: Dict[Instr, BasicBlock]):
-        # 0 is preserved for global exit
-        self.next_index: Dict[Instr, int] = {
-            instr: i + 1 for i, instr in enumerate(next_table.keys())}
         self.next_table = next_table
         self.text = ''
         self.required_headers = set()
         self.required_calls = {}
         self.required_inst = {}
+        self.required_return_blocks = set()
         self.layer_count = 0
         self.recurse_contexts = []
         self.struct_regs_owner = {}
@@ -69,10 +67,11 @@ class GlobalContext:
                 self.write_content_vars() + '\n\n' +
                 'WV_U8 status = 0;\n' +
                 'WV_ByteSlice current = packet, saved;\n'
-                'WV_U8 ret_target = 0;\n'
+                'WV_I32 ret_target = -1;\n'
                 f'goto L{global_entry.block_id};\n\n' +
                 self.text + '\n\n' +
-                f'NI0_Ret: {make_block(self.write_finalize_block())}'
+                self.write_shower() + '\n\n'
+                f'GlobalExit: {make_block(self.write_finalize_block())}'
             )
         )
 
@@ -105,11 +104,12 @@ class GlobalContext:
         return '\n'.join(
             struct.create_aux().declare_pointer() for struct in self.required_headers)
 
-    def write_ret_switch(self) -> str:
-        max_target = len(self.next_index) + 1
-        targets_text = '\n'.join(
-            f'case {index}: goto NI{index}_Ret;' for index in range(max_target))
-        return f'switch (ret_target) {make_block(targets_text)}'
+    def write_shower(self) -> str:
+        targets_text = (
+            '\n'.join(
+                f'case {block.block_id}: goto NI{block.block_id}_Ret;' for block in self.required_return_blocks)
+            + '\ndefault: goto GlobalExit;')
+        return 'L_Shower: ' + make_block(f'switch (ret_target) {make_block(targets_text)}')
 
     def write_extern_calls_decl(self) -> str:
         return '\n'.join(
@@ -217,7 +217,7 @@ class BlockRecurseContext:
             assert block.yes_block is not None and block.no_block is not None
             codes_text += f'if ({InstrContext(self, block, Instr([], [], None)).write_value(block.cond)}) goto L{block.yes_block.block_id}; else goto L{block.no_block.block_id};'
         else:
-            codes_text += self.global_context.write_ret_switch()
+            codes_text += 'goto L_Shower;'
         self.global_context.append_text(text + make_block(codes_text))
 
     def execute_all(self):

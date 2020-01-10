@@ -116,7 +116,7 @@ ip: List[Instr] = [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
             Command(runtime, 'Call', [], aux=CallWriter(
                 'count_tcp_payload'), opt_target=True),
-            next_tcp,
+            # next_tcp,
         ]),
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
