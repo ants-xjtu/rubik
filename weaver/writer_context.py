@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 from weaver.writer import ValueWriter, InstrWriter
 from weaver.auxiliary import reg_aux, StructRegAux, DataStructAux, BiDataStructAux
 from weaver.util import make_block
-from weaver.code import Instr
+from weaver.code import Instr, Value
+from weaver.lang import Seq
 
 if TYPE_CHECKING:
     from weaver.code import BasicBlock, Value, Reg
@@ -26,6 +27,8 @@ class GlobalContext:
                               entry_block: BasicBlock,
                               header_actions: List[ParseAction],
                               inst_struct: Struct = None,
+                              seq: Seq = None,
+                              use_data: bool = True,
                               ):
         layer_id = self.layer_count
         self.layer_count += 1
@@ -34,7 +37,7 @@ class GlobalContext:
         bidirection = inst_struct is not None and isinstance(
             inst_struct.create_aux(), BiDataStructAux)
         context = BlockRecurseContext(
-            self, entry_block, layer_id, header_actions, inst_struct, bidirection)
+            self, entry_block, layer_id, header_actions, inst_struct, bidirection, seq, use_data)
         context.execute_header_action()
         context.execute_inst_struct()
         self.recurse_contexts.append(context)
@@ -193,13 +196,15 @@ class GlobalContext:
 
 class BlockRecurseContext:
     def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, layer_id: int,
-                 actions: List[ParseAction], inst_struct: Optional[Struct], bidirection: bool):
+                 actions: List[ParseAction], inst_struct: Optional[Struct], bidirection: bool, seq: Optional[Seq], use_data: bool):
         self.global_context = global_context
         self.entry_block = entry_block
         self.layer_id = layer_id
         self.actions = actions
         self.inst_struct = inst_struct
         self.bidirection = bidirection
+        self.seq = seq
+        self.use_data = Value([], str(int(use_data)))
 
     def execute_header_action(self):
         structs_decl = []

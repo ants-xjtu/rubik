@@ -1,4 +1,5 @@
 from weaver.stock.headers import ethernet as ethernet_header
+from weaver.lang import *
 
 
 def ethernet():

@@ -94,6 +94,7 @@ class CreateInstWriter(InstrWriter):
         lid = context.recurse_context.layer_id
         pre = f'runtime->{context.recurse_context.prealloc()}'
         inst_aux = context.recurse_context.inst_struct.create_aux()
+        use_data = context.recurse_context.use_data
         if not context.recurse_context.bidirection:
             return (
                 f'tommy_hashdyn_insert(\n' +
@@ -101,7 +102,7 @@ class CreateInstWriter(InstrWriter):
                 f'  hash(&{pre}->k, {context.recurse_context.key_struct_size()})\n' +
                 f');\n'
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
-                f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
+                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});\n'
                 f'{pre} = malloc({inst_aux.sizeof()});\n'
                 f'memset({pre}, 0, {inst_aux.sizeof()});'
             )
@@ -122,8 +123,8 @@ class CreateInstWriter(InstrWriter):
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});',
                 f'{inst_aux.name()}->flag = 0;',
                 f'{inst_aux.name()}->flag_rev = 1;',
-                f'WV_InitSeq(&{inst_aux.name()}->seq);',
-                f'WV_InitSeq(&{inst_aux.name()}->seq_rev);',
+                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});',
+                f'WV_InitSeq(&{inst_aux.name()}->seq_rev, {use_data}, {int(context.recurse_context.seq.zero_base)});',
                 f'{pre} = malloc({inst_aux.sizeof()});',
                 f'memset({pre}, 0, {inst_aux.sizeof()});',
             ])
@@ -143,6 +144,7 @@ class FetchInstWriter(InstrWriter):
                 f'(WV_Any){fetch};'
             )
 
+
 class ToActiveWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         return f'{context.instr_context.recurse_context.prefetch_name()}->reversed'
@@ -156,28 +158,30 @@ class HeaderContainWriter(ValueWriter):
         return self.struct.create_aux().parse_flag()
 
 
-class InsertMetaWriter(InstrWriter):
+class InsertWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        # TODO: BiInst
-        # assert len(context.instr.args) == 3
         assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
-        offset, data = context.instr.args[1], context.instr.args[2]
-        return f'WV_InsertMeta(&{context.recurse_context.prefetch_name()}->seq, {context.write_value(offset)}, {context.write_value(data)});'
-
-
-class InsertDataWriter(InstrWriter):
-    def write(self, context: InstrContext) -> str:
-        assert isinstance(context.instr, Command)
-        assert context.instr.provider == sequence
-        # TODO: BiInst
-        # assert len(context.instr.args) == 3
-        assert instance_table in context.instr.args[0].regs
-        assert context.recurse_context.inst_struct is not None
-        offset, data = context.instr.args[1], context.instr.args[2]
-        return f'WV_InsertData(&{context.recurse_context.prefetch_name()}->seq, {context.write_value(offset)}, {context.write_value(data)});'
+        assert context.recurse_context.seq is not None
+        seq = context.recurse_context.seq
+        return (
+            f'WV_Insert('
+            f'&{context.recurse_context.prefetch_name()}->seq, '
+            f'{context.write_value(seq.offset)}, '
+            f'{context.write_value(seq.data)}, '
+            f'{context.write_value(seq.takeup)}, '
+            f'{context.recurse_context.use_data}'
+            f');'
+        ) + (
+            f'\n'
+            f'WV_Crop(&{context.recurse_context.prefetch_name()}->seq, '
+            f'{context.write_value(seq.window[0])}, '
+            f'{context.write_value(seq.window[1])}, '
+            f'{context.recurse_context.use_data});'
+            if seq.window is not None else ''
+        )
 
 
 class SeqReadyWriter(ValueWriter):
@@ -192,7 +196,11 @@ class SeqAssembleWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
         assert context.recurse_context.inst_struct is not None
-        return f'{context.recurse_context.content_name()} = WV_SeqAssemble(&{context.recurse_context.inst_struct.create_aux().name()}->seq, &nf{context.recurse_context.layer_id});'
+        return (
+            f'{context.recurse_context.content_name()} = WV_SeqAssemble('
+            f'&{context.recurse_context.inst_struct.create_aux().name()}->seq, '
+            f'&nf{context.recurse_context.layer_id});'
+        )
 
 
 class DestroyInstWriter(InstrWriter):
@@ -201,13 +209,14 @@ class DestroyInstWriter(InstrWriter):
         assert context.instr.provider == instance_table
         lid = context.recurse_context.layer_id
         prefetch = context.recurse_context.prefetch_name()
+        use_data = context.recurse_context.use_data
         if not context.recurse_context.bidirection:
             return (
                 f'tommy_hashdyn_remove(\n'
                 f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch},\n'
                 f'  hash(&{prefetch}->k, {context.recurse_context.key_struct_size()})\n'
                 f');\n'
-                f'WV_CleanSeq(&{prefetch}->seq);\n'
+                f'WV_CleanSeq(&{prefetch}->seq, {use_data});\n'
                 f'free({prefetch});'
             )
         else:
@@ -221,8 +230,8 @@ class DestroyInstWriter(InstrWriter):
                 f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{inst}->k_rev,',
                 f'  hash(&{inst}->k_rev, {context.recurse_context.key_struct_size()})',
                 f');',
-                f'WV_CleanSeq(&{inst}->seq);',
-                f'WV_CleanSeq(&{inst}->seq_rev);',
+                f'WV_CleanSeq(&{inst}->seq, {use_data});',
+                f'WV_CleanSeq(&{inst}->seq_rev, {use_data});',
                 f'free({inst});',
             ])
 

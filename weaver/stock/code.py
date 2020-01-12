@@ -4,6 +4,7 @@ from weaver.writer import *
 from weaver.stock import header
 from weaver.stock.reg import *
 from weaver.stock import make_reg
+from weaver.lang import *
 from typing import List
 
 # common:
@@ -65,11 +66,7 @@ ip: List[Instr] = [
     Command(sequence, 'InsertMeta',
             [Value([instance_table]), Value([offset], '{0}'),
              Value([payload], '{0}')],
-            opt_target=True, aux=InsertMetaWriter()),
-    Command(sequence, 'InsertData',
-            [Value([instance_table]), Value(
-                [offset], '{0}'), Value([payload], '{0}')],
-            opt_target=True, aux=InsertDataWriter()),
+            opt_target=True, aux=InsertWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.ip_state, DUMP), [
@@ -123,12 +120,15 @@ ip: List[Instr] = [
     ])
 ]
 
+ip_seq = Seq(Value([offset], '{0}'), Value([payload], '{0}'))
+
 # TCP protocol
 psm_triggered = make_reg(4000, 1)
 psm_trans = make_reg(4001, 2)
 reg_wnd = make_reg(4002, 4)
 reg_wnd_size = make_reg(4003, 4)
 reg_to_active = make_reg(4004, 1)
+reg_takeup = make_reg(4005, 4)
 reg_data = make_reg(4006)
 
 sport = Value([header_parser], 'header->sport')
@@ -153,10 +153,11 @@ trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
 value_payload = Value([header_parser], 'header_meta->payload', PayloadWriter())
-value_payload_len = Value([header_parser], 'header_meta->payload_length', PayloadLengthWriter())
-value_seq_num = Value([header_parser, header.tcp_seq], '{1}')
+value_payload_len = Value(
+    [header_parser], 'header_meta->payload_length', PayloadLengthWriter())
+value_seq_num = Value([header_parser, header.tcp_seq], 'WV_NToH32({1})')
 value_ack = Value([header_parser, header.tcp_ack], '{1}')
-value_ack_num = Value([header_parser, header.tcp_acknum], '{1}')
+value_ack_num = Value([header_parser, header.tcp_acknum], 'WV_NToH32({1})')
 value_syn = Value([header_parser, header.tcp_syn], '{1}')
 value_fin = Value([header_parser, header.tcp_fin], '{1}')
 value_to_active = Value([reg_to_active], '{0}')
@@ -166,7 +167,8 @@ value_to_passive = Value(
 
 def assign_data(data: Value, data_len: Value) -> List[Instr]:
     return [
-        SetValue(reg_data, AggValue([data, data_len], '(WV_ByteSlice){{ .cursor = {0}.cursor, .length = {1} }}')),
+        SetValue(reg_data, data),
+        SetValue(reg_takeup, data_len),
     ]
 
 
@@ -178,7 +180,7 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
                 [header_parser, header.tcp_ws_value], '{1}')),
         ]),
         SetValue(that_wsize, Value(
-            [header_parser, header.tcp_wndsize], '{1}')),
+            [header_parser, header.tcp_wndsize], 'WV_NToH16({1})')),
         SetValue(that_lwnd, value_ack_num),
         SetValue(reg_wnd, Value([this_lwnd], '{0}')),
         SetValue(reg_wnd_size, Value([this_wsize, this_wscale], '{0} << {1}')),
@@ -202,7 +204,8 @@ tcp: List[Instr] = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})', aux=InstExistWriter()), [
         Command(instance_table, 'Fetch', [
                 saddr, sport, daddr, dport], aux=FetchInstWriter()),
-        SetValue(reg_to_active, Value([instance_table], 'InstToActive()', ToActiveWriter())),
+        SetValue(reg_to_active, Value(
+            [instance_table], 'InstToActive()', ToActiveWriter())),
     ], [
         Command(instance_table, 'Create', [
                 saddr, sport, daddr, dport], opt_target=True, aux=CreateInstWriter()),
@@ -246,12 +249,7 @@ tcp: List[Instr] = [
         Value([reg_data], '{0}'),
         Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')
     ],
-        opt_target=True, aux=InsertMetaWriter()),
-    Command(sequence, 'InsertData', [
-        Value([instance_table]),
-        value_seq_num,
-        Value([reg_data], '{0}')
-    ], opt_target=True, aux=InsertDataWriter()),
+        opt_target=True, aux=InsertWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, CLOSED), [
@@ -272,7 +270,7 @@ tcp: List[Instr] = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, SYN_SENT), [
             If(AggValue([value_to_active, value_syn, value_ack], '{0} and {1} == 1 and {2} == 1',
-                        AggValueWriter('{0} && {1} && !{2}')), [
+                        AggValueWriter('{0} && {1} && {2}')), [
                 SetValue(psm_trans, trans_hs2),
                 SetValue(header.tcp_data_state, SYN_RECV),
                 SetValue(psm_triggered, yes),
@@ -379,9 +377,18 @@ tcp: List[Instr] = [
                 opt_target=True, aux=SeqAssembleWriter()),
     ]),
     Command(runtime, 'Call{on_EST}', [value_payload_len, value_to_active], opt_target=True, aux=CallWriter(
-        'handle_tcp_payload', [reg_data, reg_to_active])),
+        'handle_tcp_payload', [reg_data, reg_to_active, psm_trans, header.tcp_data_state])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
     ])
 ]
+
+tcp_seq = Seq(
+    Value([header.tcp_seq], 'WV_NToH32({0})'),
+    Value([reg_data], '{0}'),
+    False,
+    Value([reg_takeup], '{0}'),
+    Value([reg_wnd], '{0}'),
+    Value([reg_wnd, reg_wnd_size], '{0} + {1}'),
+)
