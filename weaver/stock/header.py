@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, TYPE_CHECKING
 from weaver.header import Struct, LocateStruct, ParseByteSlice, TaggedParseLoop
-from weaver.auxiliary import StructRegAux, reg_aux, HeaderStructAux, DataStructAuxCreator, RegAux
+from weaver.auxiliary import StructRegAux, reg_aux, HeaderStructAux, DataStructAuxCreator, RegAux, BiDataStructAuxCreator
 from weaver.code import Reg, Value, AggValue
 from weaver.stock.reg import header_parser
 from weaver.writer import TotalLengthWriter, ParsedLengthWriter
@@ -200,7 +200,8 @@ tcp_data = Struct([
     tcp_data_wv2_expr,
     tcp_data_wv2_fast_expr,
     tcp_data_wv4_expr,
-], DataStructAuxCreator([
+], BiDataStructAuxCreator([
     ip_src, tcp_sport,
+], [
     ip_dst, tcp_dport,
 ]))

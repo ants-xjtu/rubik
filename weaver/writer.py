@@ -80,7 +80,7 @@ class PrefetchInstWriter(InstrWriter):
         text += (
             f'{context.recurse_context.prefetch_name()} = tommy_hashdyn_search(\n'
             f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{pre_k},\n'
-            f'  hash(&{pre_k}, sizeof({context.recurse_context.key_struct_name()}))\n'
+            f'  hash(&{pre_k}, {context.recurse_context.key_struct_size()})\n'
             f');'
         )
         return text
@@ -92,27 +92,68 @@ class CreateInstWriter(InstrWriter):
         assert isinstance(context.instr, Command)
         assert context.instr.provider == instance_table
         lid = context.recurse_context.layer_id
-        pre = f'runtime->prealloc_{lid}'
+        pre = f'runtime->{context.recurse_context.prealloc()}'
         inst_aux = context.recurse_context.inst_struct.create_aux()
-        # TODO: BiInst
-        return (
-            f'tommy_hashdyn_insert(\n' + 
-            f'  &runtime->hash_{lid}, &{pre}->node, {pre},\n' + 
-            f'  hash(&{pre}->k, sizeof({context.recurse_context.key_struct_name()}))\n' + 
-            f');\n'
-            f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
-            f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
-            f'{pre} = malloc({inst_aux.sizeof()});\n'
-            f'memset({pre}, 0, sizeof({inst_aux.typedef()}));'
-        )
+        if not context.recurse_context.bidirection:
+            return (
+                f'tommy_hashdyn_insert(\n' +
+                f'  &runtime->hash_{lid}, &{pre}->node, {pre},\n' +
+                f'  hash(&{pre}->k, {context.recurse_context.key_struct_size()})\n' +
+                f');\n'
+                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
+                f'WV_InitSeq(&{inst_aux.name()}->seq);\n'
+                f'{pre} = malloc({inst_aux.sizeof()});\n'
+                f'memset({pre}, 0, {inst_aux.sizeof()});'
+            )
+        else:
+            pre_krev = pre + '->k_rev'
+            return '\n'.join([
+                f'{pre_krev}._{reg} = {reg_aux.write(context, reg)};'
+                for reg in context.recurse_context.inst_struct.create_aux().key_regs
+            ] + [
+                f'tommy_hashdyn_insert(',
+                f'  &runtime->hash_{lid}, &{pre}->node, {pre},',
+                f'  hash(&{pre}->k, {context.recurse_context.key_struct_size()})',
+                f');',
+                f'tommy_hashdyn_insert(',
+                f'  &runtime->hash_{lid}, &{pre}->node_rev, &{pre}->k_rev,',
+                f'  hash(&{pre}->k_rev, {context.recurse_context.key_struct_size()})',
+                f');',
+                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});',
+                f'{inst_aux.name()}->flag = 0;',
+                f'{inst_aux.name()}->flag_rev = 1;',
+                f'WV_InitSeq(&{inst_aux.name()}->seq);',
+                f'WV_InitSeq(&{inst_aux.name()}->seq_rev);',
+                f'{pre} = malloc({inst_aux.sizeof()});',
+                f'memset({pre}, 0, {inst_aux.sizeof()});',
+            ])
 
 
 class FetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert context.recurse_context.inst_struct is not None
         inst_name = context.recurse_context.inst_struct.create_aux().name()
-        # TODO: BiInst
-        return f'{inst_name} = (WV_Any){context.recurse_context.prefetch_name()};'
+        fetch = context.recurse_context.prefetch_name()
+        if not context.recurse_context.bidirection:
+            return f'{inst_name} = (WV_Any){fetch};'
+        else:
+            return (
+                f'{inst_name} = {fetch}->reversed ? '
+                f'(WV_Any)(((WV_Byte *){fetch}) - sizeof(L{context.recurse_context.layer_id}_Fetch)) : '
+                f'(WV_Any){fetch};'
+            )
+
+class ToActiveWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return f'{context.instr_context.recurse_context.prefetch_name()}->reversed'
+
+
+class HeaderContainWriter(ValueWriter):
+    def __init__(self, struct):
+        self.struct = struct
+
+    def write(self, context: ValueContext) -> str:
+        return self.struct.create_aux().parse_flag()
 
 
 class InsertMetaWriter(InstrWriter):
@@ -160,14 +201,31 @@ class DestroyInstWriter(InstrWriter):
         assert context.instr.provider == instance_table
         lid = context.recurse_context.layer_id
         prefetch = context.recurse_context.prefetch_name()
-        return (
-            f'tommy_hashdyn_remove(\n'
-            f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch},\n'
-            f'  hash(&{prefetch}->k, sizeof({context.recurse_context.key_struct_name()}))\n'
-            f');\n'
-            f'WV_CleanSeq(&{prefetch}->seq);\n'
-            f'free({prefetch});'
-        )
+        if not context.recurse_context.bidirection:
+            return (
+                f'tommy_hashdyn_remove(\n'
+                f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {prefetch},\n'
+                f'  hash(&{prefetch}->k, {context.recurse_context.key_struct_size()})\n'
+                f');\n'
+                f'WV_CleanSeq(&{prefetch}->seq);\n'
+                f'free({prefetch});'
+            )
+        else:
+            inst = context.recurse_context.inst_struct.create_aux().name()
+            return '\n'.join([
+                f'tommy_hashdyn_remove(',
+                f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, {inst},',
+                f'  hash(&{inst}->k, {context.recurse_context.key_struct_size()})',
+                f');',
+                f'tommy_hashdyn_remove(',
+                f'  &runtime->hash_{lid}, {context.recurse_context.eq_func_name()}, &{inst}->k_rev,',
+                f'  hash(&{inst}->k_rev, {context.recurse_context.key_struct_size()})',
+                f');',
+                f'WV_CleanSeq(&{inst}->seq);',
+                f'WV_CleanSeq(&{inst}->seq_rev);',
+                f'free({inst});',
+            ])
+
 
 class NextWriter(InstrWriter):
     def __init__(self, content: bool = False):
@@ -177,13 +235,14 @@ class NextWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
-        context.recurse_context.global_context.required_return_blocks.add(context.block)
+        context.recurse_context.global_context.required_return_blocks.add(
+            context.block)
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
         return (
             ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
-            'WV_I32 old_target = ret_target;\n' +
+            f'saved_target_{context.block.block_id} = ret_target;\n' +
             f'ret_target = {context.block.block_id}; goto L{next_entry}; NI{context.block.block_id}_Ret:\n' +
-            'ret_target = old_target;'
+            f'ret_target = saved_target_{context.block.block_id};'
         )
 
 
@@ -196,17 +255,21 @@ class ParseHeaderWriter(InstrWriter):
     def write_actions(self, actions: List[ParseAction], context: InstrContext) -> str:
         lines = []
         for action in actions:
-            for struct in action.iterate_structs():
-                lines.append(f'{struct.create_aux().name()} = NULL;')
             if isinstance(action, LocateStruct):
-                lines.append(f'{action.struct.create_aux().name()} = (WV_Any)current.cursor;')
-                lines.append(f'current = WV_SliceAfter(current, {action.struct.byte_length});')
+                lines.append(
+                    f'{action.struct.create_aux().name()} = (WV_Any)current.cursor;')
+                lines.append(
+                    f'{action.struct.create_aux().parse_flag()} = 1;')
+                lines.append(
+                    f'current = WV_SliceAfter(current, {action.struct.byte_length});')
             elif isinstance(action, ParseByteSlice):
                 assert reg_aux[action.slice_reg].byte_len is None
                 reg_text = reg_aux.write(context, action.slice_reg)
                 lines.append(f'{reg_text}.cursor = current.cursor;')
-                lines.append(f'{reg_text}.length = {context.write_value(action.byte_length)};')
-                lines.append(f'current = WV_SliceAfter(current, {reg_text}.length);')
+                lines.append(
+                    f'{reg_text}.length = {context.write_value(action.byte_length)};')
+                lines.append(
+                    f'current = WV_SliceAfter(current, {reg_text}.length);')
             elif isinstance(action, TaggedParseLoop):
                 assert reg_aux[action.tag].byte_len == 1  # no ntoh issue
                 tag_text = reg_aux.write(context, action.tag)
@@ -214,8 +277,9 @@ class ParseHeaderWriter(InstrWriter):
                     f'{tag_text} = (({reg_aux[action.tag].type_decl()} *)current.cursor)[0];',
                     f'current = WV_SliceAfter(current, {reg_aux[action.tag].byte_len});',
                     f'switch ({tag_text}) ' + make_block('\n'.join(
-                        (f'case {match}: ' if match is not None else 'default: ') + 
-                        make_block(self.write_actions(actions, context) + '\ncontinue;')
+                        (f'case {match}: ' if match is not None else 'default: ') +
+                        make_block(self.write_actions(
+                            actions, context) + '\ncontinue;')
                         for match, actions in action.action_map.items()
                     )),
                 ])))
@@ -244,7 +308,7 @@ class PayloadWriter(ValueWriter):
 
 class PayloadLengthWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return 'current->length'
+        return 'current.length'
 
 
 class ParsedLengthWriter(ValueWriter):

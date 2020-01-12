@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Dict, List, Optional
 from weaver.writer import ValueWriter, InstrWriter
-from weaver.auxiliary import reg_aux, StructRegAux, DataStructAux
+from weaver.auxiliary import reg_aux, StructRegAux, DataStructAux, BiDataStructAux
 from weaver.util import make_block
 from weaver.code import Instr
 
@@ -31,8 +31,10 @@ class GlobalContext:
         self.layer_count += 1
         if inst_struct is not None:
             self.required_inst[layer_id] = inst_struct
+        bidirection = inst_struct is not None and isinstance(
+            inst_struct.create_aux(), BiDataStructAux)
         context = BlockRecurseContext(
-            self, entry_block, layer_id, header_actions, inst_struct)
+            self, entry_block, layer_id, header_actions, inst_struct, bidirection)
         context.execute_header_action()
         context.execute_inst_struct()
         self.recurse_contexts.append(context)
@@ -62,11 +64,12 @@ class GlobalContext:
             self.write_runtime_impl() + '\n\n' +
             f'WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) ' + make_block(
                 GlobalContext.write_regs() + '\n\n' +
-                self.write_header_pointers_decl() + '\n\n' +
+                self.write_header_vars() + '\n\n' +
                 self.write_inst_decl() + '\n\n' +
                 self.write_content_vars() + '\n\n' +
                 'WV_U8 status = 0;\n' +
-                'WV_ByteSlice current = packet, saved;\n'
+                'WV_ByteSlice current = packet, saved;\n' +
+                self.write_return_vars() + '\n' +
                 'WV_I32 ret_target = -1;\n'
                 f'goto L{global_entry.block_id};\n\n' +
                 self.text + '\n\n' +
@@ -83,8 +86,7 @@ class GlobalContext:
             struct.create_aux().declare_type() for struct in self.required_headers)
 
     def write_inst_types_decl(self) -> str:
-        # TODO: BiInst
-        return '\n'.join(struct.create_aux().declare_inst_type(lid, False) for lid, struct in self.required_inst.items())
+        return '\n'.join(struct.create_aux().declare_inst_type(lid) for lid, struct in self.required_inst.items())
 
     def write_inst_decl(self) -> str:
         return '\n'.join(
@@ -95,14 +97,19 @@ class GlobalContext:
     def write_content_vars(self) -> str:
         return '\n'.join(f'WV_ByteSlice c{i};\nWV_Byte *nf{i} = NULL;' for i in range(self.layer_count))
 
+    def write_return_vars(self) -> str:
+        return '\n'.join(f'WV_I32 saved_target_{block.block_id};' for block in self.required_return_blocks)
+
     @staticmethod
     def write_regs() -> str:
         return '\n'.join(reg_aux.decl(reg_id) for reg_id, reg in reg_aux.regs.items() if
                          not reg.abstract and not isinstance(reg, StructRegAux))
 
-    def write_header_pointers_decl(self) -> str:
+    def write_header_vars(self) -> str:
         return '\n'.join(
-            struct.create_aux().declare_pointer() for struct in self.required_headers)
+            struct.create_aux().declare_pointer() + '\n' +
+            f'WV_U8 {struct.create_aux().parse_flag()} = 0;'
+            for struct in self.required_headers)
 
     def write_shower(self) -> str:
         targets_text = (
@@ -186,12 +193,13 @@ class GlobalContext:
 
 class BlockRecurseContext:
     def __init__(self, global_context: GlobalContext, entry_block: BasicBlock, layer_id: int,
-                 actions: List[ParseAction], inst_struct: Optional[Struct]):
+                 actions: List[ParseAction], inst_struct: Optional[Struct], bidirection: bool):
         self.global_context = global_context
         self.entry_block = entry_block
         self.layer_id = layer_id
         self.actions = actions
         self.inst_struct = inst_struct
+        self.bidirection = bidirection
 
     def execute_header_action(self):
         structs_decl = []
@@ -233,8 +241,8 @@ class BlockRecurseContext:
     def eq_func_name(self) -> str:
         return GlobalContext.eq_func_name(self.layer_id)
 
-    def key_struct_name(self) -> str:
-        return GlobalContext.key_struct_name(self.layer_id)
+    def key_struct_size(self) -> str:
+        return f'sizeof({GlobalContext.key_struct_name(self.layer_id)})'
 
     def prealloc(self) -> str:
         return GlobalContext.prealloc(self.layer_id)

@@ -2,6 +2,7 @@
 #define WEAVER_RUNTIME_TYPES_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <netinet/in.h>
 
 typedef uint8_t WV_Byte;
@@ -24,6 +25,8 @@ typedef struct _WV_ByteSlice {
     const WV_Byte *cursor;
     WV_U32 length;
 } WV_ByteSlice;
+
+static const WV_ByteSlice WV_EMPTY = { .cursor = NULL, .length = 0 };
 
 static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index) {
     WV_ByteSlice after = { .cursor = slice.cursor + index, .length = slice.length - index };

@@ -8,95 +8,128 @@
 #define WV_CONFIG_SeqNodeCount 3
 #define WV_CONFIG_SeqBufferSize (8 * (1 << 10))
 
-typedef struct {
+typedef struct
+{
     WV_U32 offset;
     WV_U32 length;
 } WV_SeqMeta;
 
-typedef struct {
+typedef struct
+{
     WV_Byte *buffer;
-    WV_U32 offset;  // global offset of &buffer[0]
+    WV_U32 offset; // global offset of &buffer[0]
     WV_SeqMeta nodes[WV_CONFIG_SeqNodeCount];
     WV_U8 used_count;
 } WV_Seq;
 
-static inline WV_U8 WV_InitSeq(WV_Seq *seq) {
-    seq->buffer = malloc(sizeof(WV_Byte) * WV_CONFIG_SeqBufferSize);
+static inline WV_U8 WV_InitSeq(WV_Seq *seq, WV_U8 use_data)
+{
+    if (use_data)
+    {
+        seq->buffer = malloc(sizeof(WV_Byte) * WV_CONFIG_SeqBufferSize);
+    }
     seq->offset = 0;
     seq->used_count = 0;
     return 0;
 }
 
-static inline WV_U8 WV_CleanSeq(WV_Seq *seq) {
-    free(seq->buffer);
+static inline WV_U8 WV_CleanSeq(WV_Seq *seq, WV_U8 use_data)
+{
+    if (use_data)
+    {
+        free(seq->buffer);
+    }
     return 0;
 }
 
-static inline WV_U8 WV_InsertMeta(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data) {
-    if (seq->used_count == 0) {
+static inline WV_U8 WV_Insert(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data, WV_U32 takeup_length, WV_U8 use_data)
+{
+    if (takeup_length == 0)
+    {
+        takeup_length = data.length;
+    }
+    if (seq->used_count == 0)
+    {
         seq->used_count = 1;
-        seq->nodes[0] = (WV_SeqMeta){ .offset = offset, .length = data.length };
-    } else {
+        seq->nodes[0] = (WV_SeqMeta){.offset = offset, .length = takeup_length};
+    }
+    else
+    {
         WV_U8 pos;
         for (pos = 0; pos < seq->used_count && offset > seq->nodes[pos].offset; pos += 1)
             ;
         // TODO: overlap
         WV_U8 mergable = pos < seq->used_count && (seq->nodes[pos].offset + seq->nodes[pos].length) == offset;
-        // printf("pos: %u prev offset: %u prev length: %u\n", pos, seq->nodes[pos - 1].offset, seq->nodes[pos - 1].length);
-        if (pos != 0 && (seq->nodes[pos - 1].offset + seq->nodes[pos - 1].length) == offset) {
-            // printf("append\n");
-            seq->nodes[pos - 1].length += data.length;
-            if (mergable) {
+        if (pos != 0 && (seq->nodes[pos - 1].offset + seq->nodes[pos - 1].length) == offset)
+        {
+            seq->nodes[pos - 1].length += takeup_length;
+            if (mergable)
+            {
                 seq->nodes[pos - 1].length += seq->nodes[pos].length;
-                for (int i = pos; i < seq->used_count; i += 1) {
-                    seq->nodes[i] = seq->nodes[i + 1]; 
+                for (int i = pos; i < seq->used_count; i += 1)
+                {
+                    seq->nodes[i] = seq->nodes[i + 1];
                 }
                 seq->used_count -= 1;
             }
-        } else if (mergable) {
-            seq->nodes[pos].offset -= data.length;
-            seq->nodes[pos].length += data.length;
-        } else {
-            for (int i = seq->used_count; i > pos; i -= 1) {
+        }
+        else if (mergable)
+        {
+            seq->nodes[pos].offset -= takeup_length;
+            seq->nodes[pos].length += takeup_length;
+        }
+        else
+        {
+            for (int i = seq->used_count; i > pos; i -= 1)
+            {
                 seq->nodes[i] = seq->nodes[i - 1];
             }
-            seq->nodes[pos] = (WV_SeqMeta){ .offset = offset, .length = data.length };
+            seq->nodes[pos] = (WV_SeqMeta){.offset = offset, .length = takeup_length};
             seq->used_count += 1;
         }
+    }
+    if (use_data)
+    {
+        memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
     }
     return 0;
 }
 
-static inline WV_U8 WV_InsertData(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data) {
-    memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
-    return 0;
+static inline WV_U8 WV_Crop(WV_Seq *seq, WV_U8 use_data)
+{
 }
 
-static inline WV_U8 WV_SeqReady(WV_Seq *seq) {
-    if (seq->used_count == 0) {
+static inline WV_U8 WV_SeqReady(WV_Seq *seq)
+{
+    if (seq->used_count == 0)
+    {
         return 1;
     }
     return seq->nodes[0].offset == seq->offset && seq->used_count == 1;
 }
 
-static inline WV_ByteSlice WV_SeqAssemble(WV_Seq *seq, WV_Byte **need_free) {
-    if (seq->used_count == 0 || seq->nodes[0].offset != seq->offset) {
+static inline WV_ByteSlice WV_SeqAssemble(WV_Seq *seq, WV_Byte **need_free)
+{
+    if (seq->used_count == 0 || seq->nodes[0].offset != seq->offset)
+    {
         *need_free = NULL;
-        return (WV_ByteSlice){ .cursor = NULL, .length = 0 };
+        return (WV_ByteSlice){.cursor = NULL, .length = 0};
     }
 
     WV_U32 ready_length = seq->nodes[0].length;
     seq->offset += ready_length;
-    if (seq->used_count == 1) {
+    if (seq->used_count == 1)
+    {
         seq->used_count = 0;
         *need_free = NULL;
-        return (WV_ByteSlice){ .cursor = seq->buffer, .length = ready_length };
+        return (WV_ByteSlice){.cursor = seq->buffer, .length = ready_length};
     }
 
     WV_Byte *ready_buffer = malloc(sizeof(WV_Byte) * ready_length);
     memcpy(ready_buffer, seq->buffer, ready_length);
 
-    for (int i = 1; i < seq->used_count; i += 1) {
+    for (int i = 1; i < seq->used_count; i += 1)
+    {
         WV_U32 offset_now = seq->nodes[i].offset - seq->offset;
         WV_U32 offset_prev = offset_now + ready_length;
         memmove(&seq->buffer[offset_now], &seq->buffer[offset_prev], seq->nodes[i].length);
@@ -105,7 +138,7 @@ static inline WV_ByteSlice WV_SeqAssemble(WV_Seq *seq, WV_Byte **need_free) {
     seq->used_count -= 1;
 
     *need_free = ready_buffer;
-    return (WV_ByteSlice){ .cursor = ready_buffer, .length = ready_length };
+    return (WV_ByteSlice){.cursor = ready_buffer, .length = ready_length};
 }
 
 #endif

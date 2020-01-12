@@ -83,6 +83,9 @@ class HeaderStructAux:
     def name(self) -> str:
         return f'h{self.struct.struct_id}'
 
+    def parse_flag(self) -> str:
+        return self.name() + '_parsed'
+
     def typedef(self) -> str:
         return f'H{self.struct.struct_id}'
 
@@ -95,7 +98,7 @@ class HeaderStructAux:
         return f'typedef struct {fields_text} {self.typedef()};'
 
     def declare_pointer(self) -> str:
-        return f'{self.typedef()} *{self.name()};'
+        return f'{self.typedef()} *{self.name()} = NULL;'
 
     @staticmethod
     def create(struct):
@@ -110,27 +113,24 @@ class DataStructAux(HeaderStructAux):
     def declare_type(self) -> str:
         assert False, 'data struct should not be declared as header struct'
 
-    def declare_inst_type(self, layer_id, bi) -> str:
-        if not bi:
-            key_struct_text = 'typedef struct ' + make_block('\n'.join(
-                reg_aux.decl(reg) for reg in self.key_regs
-            )) + f' {DataStructAux.key_struct_type(layer_id)};'
-            inst_struct_text = 'typedef struct ' + make_block('\n'.join(
-                [
-                    f'{DataStructAux.key_struct_type(layer_id)} k;', 
-                    'tommy_node node;',
-                    'WV_Seq seq;'
-                ] + 
-                [reg_aux.decl(reg) for reg in self.struct.regs]
-            )) + f' {self.typedef()};'
-            fetch_text = f'typedef {self.typedef()} L{layer_id}_Fetch;'
-            return key_struct_text + '\n' + inst_struct_text + '\n' + fetch_text
-        else:
-            assert False
-
     @staticmethod
     def key_struct_type(layer_id) -> str:
         return f'L{layer_id}_Key'
+
+    def declare_inst_type(self, layer_id) -> str:
+        key_struct_text = 'typedef struct ' + make_block('\n'.join(
+            reg_aux.decl(reg) for reg in self.key_regs
+        )) + f' {DataStructAux.key_struct_type(layer_id)};'
+        inst_struct_text = 'typedef struct ' + make_block('\n'.join(
+            [
+                f'{DataStructAux.key_struct_type(layer_id)} k;',
+                'tommy_node node;',
+                'WV_Seq seq;'
+            ] +
+            [reg_aux.decl(reg) for reg in self.struct.regs]
+        )) + f' {self.typedef()};'
+        fetch_text = f'typedef {self.typedef()} L{layer_id}_Fetch;'
+        return key_struct_text + '\n' + inst_struct_text + '\n' + fetch_text
 
 
 class DataStructAuxCreator:
@@ -139,3 +139,53 @@ class DataStructAuxCreator:
 
     def __call__(self, struct):
         return DataStructAux(self.key_regs, struct)
+
+
+class BiDataStructAux(DataStructAux):
+    def __init__(self, half_key1, half_key2, struct):
+        super().__init__(half_key1 + half_key2, struct)
+        self.half_key1 = half_key1
+        self.half_key2 = half_key2
+        self.struct = struct
+
+    def declare_inst_type(self, layer_id) -> str:
+        key_struct_text = 'typedef struct ' + make_block('\n'.join(
+            reg_aux.decl(reg) for reg in self.half_key1 + self.half_key2
+        )) + f' {BiDataStructAux.key_struct_type(layer_id)};'
+        keyrev_struct_text = 'typedef struct ' + make_block('\n'.join(
+            reg_aux.decl(reg) for reg in self.half_key2 + self.half_key1
+        )) + f' {BiDataStructAux.keyrev_struct_type(layer_id)};'
+        inst_struct_text = 'typedef struct ' + make_block('\n'.join(
+            [
+                f'{BiDataStructAux.key_struct_type(layer_id)} k;',
+                'WV_U8 flag;',
+                'tommy_node node;',
+                'WV_Seq seq;'
+            ] + [
+                f'{BiDataStructAux.keyrev_struct_type(layer_id)} k_rev;',
+                'WV_U8 flag_rev;',
+                'tommy_node node_rev;',
+                'WV_Seq seq_rev;',
+            ] +
+            [reg_aux.decl(reg) for reg in self.struct.regs]
+        )) + f' {self.typedef()};'
+        fetch_text = 'typedef struct ' + make_block('\n'.join([
+            f'{BiDataStructAux.key_struct_type(layer_id)} k;',
+            'WV_U8 reversed;',
+            'tommy_node node;',
+            'WV_Seq seq;',
+        ])) + f' L{layer_id}_Fetch;'
+        return key_struct_text + '\n' + keyrev_struct_text + '\n' + inst_struct_text + '\n' + fetch_text
+
+    @staticmethod
+    def keyrev_struct_type(layer_id) -> str:
+        return BiDataStructAux.key_struct_type(layer_id) + 'Rev'
+
+
+class BiDataStructAuxCreator:
+    def __init__(self, half_key1, half_key2):
+        self.half_key1 = half_key1
+        self.half_key2 = half_key2
+
+    def __call__(self, struct):
+        return BiDataStructAux(self.half_key1, self.half_key2, struct)

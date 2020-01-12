@@ -116,7 +116,7 @@ ip: List[Instr] = [
         If(AggValue([Value([header_parser, header.ip_protocol], '{1}'), Value([], '6')], '{0} == {1}'), [
             Command(runtime, 'Call', [], aux=CallWriter(
                 'count_tcp_payload'), opt_target=True),
-            # next_tcp,
+            next_tcp,
         ]),
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
@@ -129,7 +129,6 @@ psm_trans = make_reg(4001, 2)
 reg_wnd = make_reg(4002, 4)
 reg_wnd_size = make_reg(4003, 4)
 reg_to_active = make_reg(4004, 1)
-reg_data_len = make_reg(4005, 4)
 reg_data = make_reg(4006)
 
 sport = Value([header_parser], 'header->sport')
@@ -154,7 +153,7 @@ trans_wv3 = Value([], '8')
 trans_wv4 = Value([], '9')
 
 value_payload = Value([header_parser], 'header_meta->payload', PayloadWriter())
-value_payload_len = Value([header_parser], 'header_meta->payload_length')
+value_payload_len = Value([header_parser], 'header_meta->payload_length', PayloadLengthWriter())
 value_seq_num = Value([header_parser, header.tcp_seq], '{1}')
 value_ack = Value([header_parser, header.tcp_ack], '{1}')
 value_ack_num = Value([header_parser, header.tcp_acknum], '{1}')
@@ -167,15 +166,14 @@ value_to_passive = Value(
 
 def assign_data(data: Value, data_len: Value) -> List[Instr]:
     return [
-        SetValue(reg_data, data),
-        SetValue(reg_data_len, data_len),
+        SetValue(reg_data, AggValue([data, data_len], '(WV_ByteSlice){{ .cursor = {0}.cursor, .length = {1} }}')),
     ]
 
 
 def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: int, this_wscale: int,
                   this_wsize: int) -> List[Instr]:
     return [
-        If(Value([header_parser], 'HeaderContain(tcp_ws)'), [
+        If(Value([header_parser], 'HeaderContain(tcp_ws)', HeaderContainWriter(header.tcp_header_ws)), [
             SetValue(that_wscale, Value(
                 [header_parser, header.tcp_ws_value], '{1}')),
         ]),
@@ -190,7 +188,7 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
 def to_rst(from_state: Value):
     to_state = AggValue([from_state], f'{{0}} + {TERMINATE}')
     trans = AggValue([from_state], f'{{0}} + {trans_wv4}')
-    return If(Value([header_parser], 'header->rst'), [
+    return If(Value([header_parser, header.tcp_rst], '{1}'), [
         SetValue(psm_trans, trans),
         SetValue(header.tcp_data_state, to_state),
         SetValue(psm_triggered, yes),
@@ -204,7 +202,7 @@ tcp: List[Instr] = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})', aux=InstExistWriter()), [
         Command(instance_table, 'Fetch', [
                 saddr, sport, daddr, dport], aux=FetchInstWriter()),
-        SetValue(reg_to_active, Value([instance_table], 'InstToActive()')),
+        SetValue(reg_to_active, Value([instance_table], 'InstToActive()', ToActiveWriter())),
     ], [
         Command(instance_table, 'Create', [
                 saddr, sport, daddr, dport], opt_target=True, aux=CreateInstWriter()),
@@ -212,10 +210,10 @@ tcp: List[Instr] = [
         SetValue(header.tcp_data_state, CLOSED),
         SetValue(header.tcp_data_fin_seq_1, no),
         SetValue(header.tcp_data_fin_seq_2, no),
-        SetValue(header.tcp_data_active_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(header.tcp_data_active_wsize, Value([], f'{(1 << 32) - 1}')),
         SetValue(header.tcp_data_active_wscale, no),
         SetValue(header.tcp_data_active_lwnd, no),
-        SetValue(header.tcp_data_passive_wsize, Value([], '(1 << 32) - 1')),
+        SetValue(header.tcp_data_passive_wsize, Value([], f'{(1 << 32) - 1}')),
         SetValue(header.tcp_data_passive_wscale, no),
         SetValue(header.tcp_data_passive_lwnd, no),
         SetValue(header.tcp_data_seen_ack, no),
@@ -225,7 +223,7 @@ tcp: List[Instr] = [
         SetValue(header.tcp_data_wv4_expr, no),
     ]),
     If(value_ack, assign_data(value_payload, value_payload_len), [
-        If(value_syn, assign_data(no, Value([], '1')), [
+        If(value_syn, assign_data(Value([runtime], 'WV_EMPTY'), Value([], '1')), [
             If(value_fin, assign_data(value_payload, AggValue([value_payload_len], '{0} + 1')) + [
                 If(EqualTest(header.tcp_data_state, EST), [
                     SetValue(header.tcp_data_fin_seq_1, AggValue(
@@ -262,7 +260,7 @@ tcp: List[Instr] = [
                 SetValue(header.tcp_data_state, TERMINATE),
                 SetValue(psm_triggered, yes),
             ]),
-            If(AggValue([value_syn, value_ack], '{0} == 1 and {1} == 0', TemplateValueWriter('{0} && !{1}')), [
+            If(AggValue([value_syn, value_ack], '{0} == 1 and {1} == 0', AggValueWriter('{0} && !{1}')), [
                 SetValue(psm_trans, trans_hs1),
                 SetValue(header.tcp_data_state, SYN_SENT),
                 SetValue(psm_triggered, yes),
@@ -274,7 +272,7 @@ tcp: List[Instr] = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, SYN_SENT), [
             If(AggValue([value_to_active, value_syn, value_ack], '{0} and {1} == 1 and {2} == 1',
-                        TemplateValueWriter('{0} && {1} && !{2}')), [
+                        AggValueWriter('{0} && {1} && !{2}')), [
                 SetValue(psm_trans, trans_hs2),
                 SetValue(header.tcp_data_state, SYN_RECV),
                 SetValue(psm_triggered, yes),
@@ -323,7 +321,7 @@ tcp: List[Instr] = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, FIN_WAIT), [
             If(AggValue([value_ack, value_fin, Value([header.tcp_data_fin_seq_1], '{}'), value_ack_num],
-                        '{0} and {1} == 0 and {2} + 1 == {3}', TemplateValueWriter('{0} && !{1} && {2} + 1 == {3}')), [
+                        '{0} and {1} == 0 and {2} + 1 == {3}', AggValueWriter('{0} && !{1} && {2} + 1 == {3}')), [
                 SetValue(header.tcp_data_wv2_expr, yes),
             ]),
             If(EqualTest(header.tcp_data_wv2_expr, yes), [
@@ -334,7 +332,7 @@ tcp: List[Instr] = [
                 ]),
             ]),
             If(AggValue([value_ack, value_fin, Value([header.tcp_data_fin_seq_1], '{}'), value_ack_num],
-                        '{0} and {1} and {2} + 1 == {3}', TemplateValueWriter('{0} && {1} && {2} + 1 == {3}')), [
+                        '{0} and {1} and {2} + 1 == {3}', AggValueWriter('{0} && {1} && {2} + 1 == {3}')), [
                 SetValue(header.tcp_data_wv2_fast_expr, yes),
             ]),
             If(EqualTest(header.tcp_data_wv2_fast_expr, yes), [
@@ -362,7 +360,7 @@ tcp: List[Instr] = [
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, LAST_ACK), [
             If(AggValue([value_ack, Value([header.tcp_data_fin_seq_2], '{}'), value_ack_num], '{0} and {1} + 1 == {2}',
-                        TemplateValueWriter('{0} && {1} + 1 == {2}')), [
+                        AggValueWriter('{0} && {1} + 1 == {2}')), [
                 SetValue(header.tcp_data_wv4_expr, yes),
             ]),
             If(EqualTest(header.tcp_data_wv4_expr, yes), [
@@ -380,11 +378,8 @@ tcp: List[Instr] = [
         Command(sequence, 'Assemble', [],
                 opt_target=True, aux=SeqAssembleWriter()),
     ]),
-    # there is (probably) no next layer, so let's fake a custom event
-    If(EqualTest(header.tcp_data_state, EST), [
-        Command(runtime, 'Call{on_EST}', [value_payload_len], opt_target=True, aux=CallWriter(
-            'handle_est_payload', [reg_data_len])),
-    ]),
+    Command(runtime, 'Call{on_EST}', [value_payload_len, value_to_active], opt_target=True, aux=CallWriter(
+        'handle_tcp_payload', [reg_data, reg_to_active])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
