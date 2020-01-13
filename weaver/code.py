@@ -314,6 +314,14 @@ class BasicBlock:
             yield from self.yes_block.recurse()
             yield from self.no_block.recurse()
 
+    def proc_exit(self, proc) -> BasicBlock:
+        if self.cond is None:
+            return BasicBlock(proc(self.codes))
+        else:
+            return BasicBlock(
+                self.codes, self.cond,
+                self.yes_block.proc_exit(proc), self.no_block.proc_exit(proc))
+
     class IfDep(Exception):
         def __init__(self, i, instr):
             super().__init__()
@@ -387,10 +395,13 @@ class BasicBlock:
             return self
         return BasicBlock(fixed_codes, self.cond, yes_block, no_block)
 
-    def optimize(self) -> BasicBlock:
+    def optimize(self, proc=None) -> BasicBlock:
         block = self
         while True:
             opt_block = block.eval_reduce().relocate_cond()
             if opt_block is block:
                 return block
-            block = opt_block
+            if proc is None:
+                block = opt_block
+            else:
+                block = opt_block.proc_exit(proc)

@@ -189,3 +189,21 @@ class BiDataStructAuxCreator:
 
     def __call__(self, struct):
         return BiDataStructAux(self.half_key1, self.half_key2, struct)
+
+
+class InstrAux:
+    def __init__(self, writer, opt_stage=-1):
+        self.writer = writer
+        self.opt_stage = opt_stage
+
+    def write(self, context):
+        return self.writer.write(context)
+
+
+
+class ValueAux:
+    def __init__(self, writer):
+        self.writer = writer
+
+    def write(self, context):
+        return self.writer.write(context)

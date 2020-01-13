@@ -13,7 +13,8 @@ no = Value([], '0')
 ready = Value([sequence], 'seq->ready', SeqReadyWriter())
 
 # Ethernet protocol
-next_ip = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter())
+next_ip = Command(runtime, 'Next', [Value(
+    [header_parser], aux=PayloadWriter())], opt_target=True, aux=NextWriter())
 eth: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(runtime, 'Call', [Value([header.eth_type])],
@@ -41,7 +42,8 @@ more_frag = Value([header_parser, header.ip_more_frag], '{1}')
 seen_dont_frag = make_reg(1001, 1)
 offset = make_reg(2002, 2)
 payload = make_reg(2003)
-next_tcp = Command(runtime, 'Next', [], opt_target=True, aux=NextWriter(True))
+next_tcp = Command(runtime, 'Next', [Value(
+    [sequence], 'seq->Content()', aux=ContentWriter())], opt_target=True, aux=NextWriter())
 ip: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(instance_table, 'Prefetch', [
@@ -63,7 +65,7 @@ ip: List[Instr] = [
                  Value([header_parser], aux=PayloadWriter())
              ],
                  '(WV_ByteSlice){{ .cursor = {2}.cursor, .length = WV_NToH16({0}) - ({1} << 2) }}')),
-    Command(sequence, 'InsertMeta',
+    Command(sequence, 'Insert',
             [Value([instance_table]), Value([offset], '{0}'),
              Value([payload], '{0}')],
             opt_target=True, aux=InsertWriter()),
@@ -226,16 +228,16 @@ tcp: List[Instr] = [
         SetValue(header.tcp_data_wv2_fast_expr, no),
         SetValue(header.tcp_data_wv4_expr, no),
     ]),
-    If(value_ack, assign_data(value_payload, value_payload_len), [
+    If(value_fin, assign_data(value_payload, AggValue([value_payload_len], '{0} + 1')) + [
+        If(EqualTest(header.tcp_data_state, EST), [
+            SetValue(header.tcp_data_fin_seq_1, AggValue(
+                [value_seq_num, value_payload_len], '{0} + {1}')),
+        ], [
+            SetValue(header.tcp_data_fin_seq_2, value_seq_num),
+        ]),
+    ], [
         If(value_syn, assign_data(Value([runtime], 'WV_EMPTY'), Value([], '1')), [
-            If(value_fin, assign_data(value_payload, AggValue([value_payload_len], '{0} + 1')) + [
-                If(EqualTest(header.tcp_data_state, EST), [
-                    SetValue(header.tcp_data_fin_seq_1, AggValue(
-                        [value_seq_num, value_payload_len], '{0} + {1}')),
-                ], [
-                    SetValue(header.tcp_data_fin_seq_2, value_seq_num),
-                ]),
-            ]),
+            If(value_ack, assign_data(value_payload, value_payload_len), []),
         ]),
     ]),
     If(value_to_active,
@@ -244,10 +246,10 @@ tcp: List[Instr] = [
     If(value_to_passive,
        update_window(header.tcp_data_active_lwnd, header.tcp_data_active_wscale, header.tcp_data_active_wsize, header.tcp_data_passive_lwnd, header.tcp_data_passive_wscale,
                      header.tcp_data_passive_wsize)),
-    Command(sequence, 'InsertMeta', [
+    Command(sequence, 'Insert', [
         Value([instance_table]),
         value_seq_num,
-        Value([reg_data], '{0}'),
+        Value([reg_data, reg_takeup], '{0}'),
         Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')
     ],
         opt_target=True, aux=InsertWriter()),
@@ -378,9 +380,9 @@ tcp: List[Instr] = [
                 opt_target=True, aux=SeqAssembleWriter()),
         SetValue(tcp_content, Value([sequence], aux=ContentWriter())),
     ], [
-        SetValue(tcp_content, Value([], 'WV_EMPTY')),
+        SetValue(tcp_content, Value([runtime], 'WV_EMPTY')),
     ]),
-    Command(runtime, 'Call{on_EST}', [value_to_active], opt_target=True, aux=CallWriter(
+    Command(runtime, 'Call', [value_to_active], opt_target=True, aux=CallWriter(
         'handle_tcp_payload', [tcp_content, reg_to_active, psm_trans, header.tcp_data_state])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],

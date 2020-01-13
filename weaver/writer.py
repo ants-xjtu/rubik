@@ -130,6 +130,24 @@ class CreateInstWriter(InstrWriter):
             ])
 
 
+class CreateLightInstWriter(InstrWriter):
+    def write(self, context: InstrWriter) -> str:
+        pre = f'runtime->{context.recurse_context.prealloc()}'
+        inst_aux = context.recurse_context.inst_struct.create_aux()
+        use_data = context.recurse_context.use_data
+        if not context.recurse_context.bidirection:
+            return (
+                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
+                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});'
+            )
+        else:
+            return (
+                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
+                f'{inst_aux.name()}->flag = 0;\n'
+                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});'
+            )
+
+
 class FetchInstWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert context.recurse_context.inst_struct is not None
@@ -202,9 +220,20 @@ class SeqAssembleWriter(InstrWriter):
             f'&nf{context.recurse_context.layer_id});'
         )
 
+
 class ContentWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         return context.instr_context.recurse_context.content_name()
+
+
+class SetContentWriter(InstrWriter):
+    def write(self, context: InstrContext) -> str:
+        return f'{context.recurse_context.content_name()} = {context.write_value(context.instr.args[0])};'
+
+
+class EmptyAlignWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return f'WV_SeqEmptyAlign(&{context.instr_context.recurse_context.prefetch_name()}->seq, {context.write_value(context.instr_context.recurse_context.seq.offset)})'
 
 
 class DestroyInstWriter(InstrWriter):
@@ -241,9 +270,8 @@ class DestroyInstWriter(InstrWriter):
 
 
 class NextWriter(InstrWriter):
-    def __init__(self, content: bool = False):
+    def __init__(self):
         super(NextWriter, self).__init__()
-        self.content = content
 
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
@@ -251,8 +279,9 @@ class NextWriter(InstrWriter):
         context.recurse_context.global_context.required_return_blocks.add(
             context.block)
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
+        content = context.instr.args[0]
         return (
-            ('', f'current = {context.recurse_context.content_name()};\n')[self.content] +
+            f'current = {context.write_value(content)};\n' +
             f'saved_target_{context.block.block_id} = ret_target;\n' +
             f'ret_target = {context.block.block_id}; goto L{next_entry}; NI{context.block.block_id}_Ret:\n' +
             f'ret_target = saved_target_{context.block.block_id};'

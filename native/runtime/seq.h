@@ -46,6 +46,7 @@ static inline WV_U8 WV_CleanSeq(WV_Seq *seq, WV_U8 use_data)
 
 static inline WV_U8 WV_Insert(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data, WV_U32 takeup_length, WV_U8 use_data)
 {
+    // printf("INSERT offset: %u length: %u\n", offset, takeup_length);
     if (seq->set_offset)
     {
         seq->offset = offset;
@@ -54,6 +55,10 @@ static inline WV_U8 WV_Insert(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data, WV_
     if (takeup_length == 0)
     {
         takeup_length = data.length;
+    }
+    if (offset < seq->offset) {
+        // todo: out of window
+        return 1;
     }
     if (seq->used_count == 0)
     {
@@ -95,6 +100,9 @@ static inline WV_U8 WV_Insert(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data, WV_
             seq->used_count += 1;
         }
     }
+    // for (int i = 0; i < seq->used_count; i += 1) {
+    //     printf("offset: %u length: %u\n", seq->nodes[i].offset, seq->nodes[i].length);  
+    // }
     if (use_data)
     {
         memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
@@ -195,6 +203,10 @@ static inline WV_ByteSlice WV_SeqAssemble(WV_Seq *seq, WV_Byte **need_free)
 
     *need_free = ready_buffer;
     return (WV_ByteSlice){.cursor = ready_buffer, .length = ready_length};
+}
+
+static inline WV_U8 WV_SeqEmptyAlign(WV_Seq *seq, WV_U32 offset) {
+    return seq->used_count == 0 && seq->offset == offset;
 }
 
 #endif
