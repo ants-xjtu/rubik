@@ -99,11 +99,6 @@ static inline WV_U8 WV_Insert(WV_Seq *seq, WV_U32 offset, WV_ByteSlice data, WV_
     {
         memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
     }
-    printf("used_count: %u\n", seq->used_count);
-    for (int i = 0; i < seq->used_count; i += 1) {
-        printf("offset: %u length: %u | ", seq->nodes[i].offset - seq->offset, seq->nodes[i].length);
-    }
-    printf("\n");
     return 0;
 }
 
@@ -140,6 +135,7 @@ static inline WV_U8 WV_Crop(WV_Seq *seq, WV_U32 left, WV_U32 right, WV_U8 use_da
         seq->used_count -= first;
         seq->offset = left;
     }
+
     for (WV_U8 i = 0; i < seq->used_count; i += 1)
     {
         if (seq->nodes[i].offset + seq->nodes[i].length > right)

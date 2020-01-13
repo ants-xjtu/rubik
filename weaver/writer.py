@@ -198,9 +198,13 @@ class SeqAssembleWriter(InstrWriter):
         assert context.recurse_context.inst_struct is not None
         return (
             f'{context.recurse_context.content_name()} = WV_SeqAssemble('
-            f'&{context.recurse_context.inst_struct.create_aux().name()}->seq, '
+            f'&{context.recurse_context.prefetch_name()}->seq, '
             f'&nf{context.recurse_context.layer_id});'
         )
+
+class ContentWriter(ValueWriter):
+    def write(self, context: ValueContext) -> str:
+        return context.instr_context.recurse_context.content_name()
 
 
 class DestroyInstWriter(InstrWriter):

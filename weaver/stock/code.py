@@ -130,6 +130,7 @@ reg_wnd_size = make_reg(4003, 4)
 reg_to_active = make_reg(4004, 1)
 reg_takeup = make_reg(4005, 4)
 reg_data = make_reg(4006)
+tcp_content = make_reg(4007)
 
 sport = Value([header_parser], 'header->sport')
 dport = Value([header_parser], 'header->dport')
@@ -375,9 +376,12 @@ tcp: List[Instr] = [
     If(EqualTest(psm_trans, trans_buffering), [
         Command(sequence, 'Assemble', [],
                 opt_target=True, aux=SeqAssembleWriter()),
+        SetValue(tcp_content, Value([sequence], aux=ContentWriter())),
+    ], [
+        SetValue(tcp_content, Value([], 'WV_EMPTY')),
     ]),
-    Command(runtime, 'Call{on_EST}', [value_payload_len, value_to_active], opt_target=True, aux=CallWriter(
-        'handle_tcp_payload', [reg_data, reg_to_active, psm_trans, header.tcp_data_state])),
+    Command(runtime, 'Call{on_EST}', [value_to_active], opt_target=True, aux=CallWriter(
+        'handle_tcp_payload', [tcp_content, reg_to_active, psm_trans, header.tcp_data_state])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
