@@ -80,6 +80,9 @@ static inline WV_U8 WV_Insert(
     if (right > right_limit) {
       right = right_limit;
     }
+    if (offset >= right || offset + takeup_length <= left) {
+      return 0;
+    }
     if (offset < left) {
       takeup_length -= left - offset;
       data = WV_SliceAfter(data, left - offset);
@@ -103,7 +106,7 @@ static inline WV_U8 WV_Insert(
     } else if (pos != 0) {
       if (offset <= seq->nodes[pos - 1].right) {
         assert(offset >= seq->nodes[pos - 1].left);
-        assert(offset + takeup_length < seq->nodes[pos].left);
+        // assert(offset + takeup_length <= seq->nodes[pos].left);
         seq->nodes[pos - 1].right = offset + takeup_length;
         if (pos < seq->used_count && seq->nodes[pos - 1].right >= seq->nodes[pos].left) {
           assert(seq->nodes[pos - 1].right <= seq->nodes[pos].right);
@@ -127,8 +130,11 @@ static inline WV_U8 WV_Insert(
       }
     } else {
       if (seq->nodes[0].left <= offset + takeup_length) {
-        assert(seq->nodes[0].right >= offset + takeup_length);
         seq->nodes[0].left = offset;
+        assert(seq->used_count == 1 || seq->nodes[1].left > offset + takeup_length);
+        if (seq->nodes[0].right < offset + takeup_length) {
+          seq->nodes[0].right = offset + takeup_length;
+        }
       } else {
         for (WV_U8 i = seq->used_count; i > 0; i -= 1) {
           seq->nodes[i] = seq->nodes[i - 1];
@@ -166,12 +172,34 @@ static inline WV_U8 WV_Insert(
         seq->has_post = 1;
       }
     } else {
-      assert(offset + takeup_length >= seq->postfix.right);
-      seq->postfix.right = offset + takeup_length;
+      if (offset + takeup_length >= seq->postfix.right) {
+        seq->postfix.right = offset + takeup_length;
+      }
     }
   }
   if (use_data && data.length != 0) {
     memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
+  }
+  
+  if (seq->used_count == 0 || (left == 0 && right == 0)) {
+    return 0;
+  }
+  WV_U8 first;
+  for (first = 0; first < seq->used_count && seq->nodes[first].right <= left; first += 1)
+    ;
+  if (seq->nodes[first].left < left) {
+    seq->nodes[first].left = left;
+  }
+  for (WV_U8 i = first; i < seq->used_count; i += 1) {
+    seq->nodes[i - first] = seq->nodes[i];
+  }
+  seq->used_count -= first;
+  for (WV_U8 last = 0; last < seq->used_count; last += 1) {
+    if (seq->nodes[last].right >= right) {
+      seq->nodes[last].right = right;
+      seq->used_count = last;
+      break;
+    }
   }
   return 0;
 }
