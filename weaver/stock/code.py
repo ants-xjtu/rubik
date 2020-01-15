@@ -182,9 +182,11 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
             SetValue(that_wscale, Value(
                 [header_parser, header.tcp_ws_value], '{1}')),
         ]),
-        SetValue(that_wsize, Value(
-            [header_parser, header.tcp_wndsize], 'WV_NToH16({1})')),
-        SetValue(that_lwnd, value_ack_num),
+        If(value_ack, [
+            SetValue(that_wsize, Value(
+                [header_parser, header.tcp_wndsize], 'WV_NToH16({1})')),
+            SetValue(that_lwnd, value_ack_num),
+        ]),
         SetValue(reg_wnd, Value([this_lwnd], '{0}')),
         SetValue(reg_wnd_size, Value([this_wsize, this_wscale], '{0} << {1}')),
     ]
@@ -206,7 +208,8 @@ tcp_seq = Seq(
     False,
     Value([reg_takeup], '{0}'),
     Value([reg_wnd], '{0}'),
-    Value([reg_wnd, reg_wnd_size], '{0} + {1}'),
+    Value([reg_wnd, reg_wnd_size],
+          '{0} + {1} >= {0} ? {0} + {1} : WV_U32_MAX'),
 )
 
 tcp: List[Instr] = [
@@ -225,10 +228,10 @@ tcp: List[Instr] = [
         SetValue(header.tcp_data_state, CLOSED),
         SetValue(header.tcp_data_fin_seq_1, no),
         SetValue(header.tcp_data_fin_seq_2, no),
-        SetValue(header.tcp_data_active_wsize, Value([], f'{(1 << 32) - 1}')),
+        SetValue(header.tcp_data_active_wsize, Value([], 'WV_U32_MAX')),
         SetValue(header.tcp_data_active_wscale, no),
         SetValue(header.tcp_data_active_lwnd, no),
-        SetValue(header.tcp_data_passive_wsize, Value([], f'{(1 << 32) - 1}')),
+        SetValue(header.tcp_data_passive_wsize, Value([], 'WV_U32_MAX')),
         SetValue(header.tcp_data_passive_wscale, no),
         SetValue(header.tcp_data_passive_lwnd, no),
         SetValue(header.tcp_data_seen_ack, no),

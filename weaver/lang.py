@@ -11,7 +11,7 @@ class Seq:
             assert window_right is not None
             self.window = (window_left, window_right)
         else:
-            self.window = None
+            self.window = (Value([], '0'), Value([], '0'))
 
 
 def connectionless():

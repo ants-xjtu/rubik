@@ -190,15 +190,10 @@ class InsertWriter(InstrWriter):
             f'{context.write_value(seq.offset)}, '
             f'{context.write_value(seq.data)}, '
             f'{context.write_value(seq.takeup)}, '
-            f'{context.recurse_context.use_data}'
-            f');'
-        ) + (
-            f'\n'
-            f'WV_Crop(&{context.recurse_context.prefetch_name()}->seq, '
+            f'{context.recurse_context.use_data}, '
             f'{context.write_value(seq.window[0])}, '
-            f'{context.write_value(seq.window[1])}, '
-            f'{context.recurse_context.use_data});'
-            if seq.window is not None else ''
+            f'{context.write_value(seq.window[1])}'
+            f');'
         )
 
 
