@@ -16,4 +16,6 @@ WV_U8 WV_ProfileStart(WV_Profile *);
 
 WV_U8 WV_ProfileRecord(WV_Profile *, WV_U32, WV_U8);
 
+WV_U8 WV_ProfileRecordPrint(WV_Profile *);
+
 #endif

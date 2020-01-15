@@ -77,6 +77,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    WV_ProfileRecordPrint(WV_GetProfile(runtime));
     if (WV_FreeRuntime(runtime)) {
         fprintf(stderr, "runtime cleanup fail\n");
         return 1;

@@ -200,6 +200,15 @@ def to_rst(from_state: Value):
     ])
 
 
+tcp_seq = Seq(
+    Value([header.tcp_seq], 'WV_NToH32({0})'),
+    Value([reg_data], '{0}'),
+    False,
+    Value([reg_takeup], '{0}'),
+    Value([reg_wnd], '{0}'),
+    Value([reg_wnd, reg_wnd_size], '{0} + {1}'),
+)
+
 tcp: List[Instr] = [
     Command(header_parser, 'Parse', [], aux=ParseHeaderWriter()),
     Command(instance_table, 'Prefetch', [
@@ -236,9 +245,10 @@ tcp: List[Instr] = [
             SetValue(header.tcp_data_fin_seq_2, value_seq_num),
         ]),
     ], [
-        If(value_syn, assign_data(Value([runtime], 'WV_EMPTY'), Value([], '1')), [
-            If(value_ack, assign_data(value_payload, value_payload_len), []),
-        ]),
+        If(value_syn,
+           assign_data(Value([runtime], 'WV_EMPTY'), Value([], '1')),
+           assign_data(value_payload, value_payload_len),
+           ),
     ]),
     If(value_to_active,
        update_window(header.tcp_data_passive_lwnd, header.tcp_data_passive_wscale, header.tcp_data_passive_wsize, header.tcp_data_active_lwnd, header.tcp_data_active_wscale,
@@ -248,11 +258,9 @@ tcp: List[Instr] = [
                      header.tcp_data_passive_wsize)),
     Command(sequence, 'Insert', [
         Value([instance_table]),
-        value_seq_num,
-        Value([reg_data, reg_takeup], '{0}'),
-        Value([reg_wnd, reg_wnd_size], '({0}, {0} + {1})')
-    ],
-        opt_target=True, aux=InsertWriter()),
+        tcp_seq.offset, tcp_seq.data, tcp_seq.takeup, AggValue(
+            list(tcp_seq.window))
+    ], opt_target=True, aux=InsertWriter()),
     SetValue(psm_triggered, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, CLOSED), [
@@ -378,23 +386,12 @@ tcp: List[Instr] = [
     If(EqualTest(psm_trans, trans_buffering), [
         Command(sequence, 'Assemble', [],
                 opt_target=True, aux=SeqAssembleWriter()),
-        SetValue(tcp_content, Value([sequence], aux=ContentWriter())),
-    ], [
-        SetValue(tcp_content, Value([runtime], 'WV_EMPTY')),
-    ]),
-    Command(runtime, 'Call', [value_to_active], opt_target=True, aux=CallWriter(
+    ], []),
+    SetValue(tcp_content, Value([sequence], aux=ContentWriter())),
+    Command(runtime, 'Call', [Value([tcp_content, reg_to_active, psm_trans, header.tcp_data_state])], opt_target=True, aux=CallWriter(
         'handle_tcp_payload', [tcp_content, reg_to_active, psm_trans, header.tcp_data_state])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
     ])
 ]
-
-tcp_seq = Seq(
-    Value([header.tcp_seq], 'WV_NToH32({0})'),
-    Value([reg_data], '{0}'),
-    False,
-    Value([reg_takeup], '{0}'),
-    Value([reg_wnd], '{0}'),
-    Value([reg_wnd, reg_wnd_size], '{0} + {1}'),
-)

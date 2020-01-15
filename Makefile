@@ -10,8 +10,9 @@ sep = Weaver Auto-generated Blackbox Code
 
 all: procpkts
 
-procpkts: $(bb) $(A) native/drivers/$(T).c native/weaver.h native/runtime/libwvrt.a
-	$(CC) -g -O3 -o $@ $^ -I./native -I./native/runtime/tommyds -lpcap
+# TODO: native/weaver.h
+procpkts: $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
+	$(CC) $(cflags) -g -o $@ $^ -I./native -I./native/runtime/tommyds -lpcap
 
 gen:
 	# https://stackoverflow.com/a/7104422

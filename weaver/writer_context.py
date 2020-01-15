@@ -98,7 +98,7 @@ class GlobalContext:
             for lid, struct in self.required_inst.items())
 
     def write_content_vars(self) -> str:
-        return '\n'.join(f'WV_ByteSlice c{i};\nWV_Byte *nf{i} = NULL;' for i in range(self.layer_count))
+        return '\n'.join(f'WV_ByteSlice c{i} = WV_EMPTY;\nWV_Byte *nf{i} = NULL;' for i in range(self.layer_count))
 
     def write_return_vars(self) -> str:
         return '\n'.join(f'WV_I32 saved_target_{block.block_id};' for block in self.required_return_blocks)
