@@ -45,7 +45,7 @@ def pat1(codes, seq):
     if all(x is not None for x in [create, insert, assemble]) and create < insert < assemble:
         return codes[:insert] + codes[insert + 1:assemble] + [
             Command(sequence, 'SetContent', [
-                    seq.data], aux=InstrAux(SetContentWriter(), 1))
+                    seq.data], aux=InstrAux(SetContentWriter(), 1), opt_target=True)
         ] + codes[assemble + 1:]
     return codes
 
@@ -57,13 +57,13 @@ def pat2(codes, seq):
         return codes[:insert] + [
             Choice(AggValue([Value([sequence]), seq.offset], 'EmptyAlign(seq->offset)', aux=ValueAux(EmptyAlignWriter())), [
                 Command(sequence, 'SetContent', [
-                        seq.data], aux=InstrAux(SetContentWriter(), 2))
+                        seq.data], aux=InstrAux(SetContentWriter(), 2), opt_target=True)
             ] + codes[insert + 1:assemble] + codes[assemble + 1:], [
                 Command(sequence, 'Insert', codes[insert].args, aux=InstrAux(
-                    getattr(codes[insert].aux, 'writer', None) or codes[insert].aux, 2)),
+                    getattr(codes[insert].aux, 'writer', None) or codes[insert].aux, 2), opt_target=True),
                 *codes[insert + 1:assemble],
                 Command(sequence, 'Assemble', codes[assemble].args, aux=InstrAux(
-                    getattr(codes[assemble].aux, 'writer', None) or codes[assemble].aux, 2)),
+                    getattr(codes[assemble].aux, 'writer', None) or codes[assemble].aux, 2), opt_target=True),
                 *codes[assemble + 1:],
             ])
         ]
@@ -88,8 +88,14 @@ def pat4(codes, seq):
     create = find_index(codes, IsCommand(instance_table, 'Create', 4))
     destroy = find_index(codes, IsCommand(instance_table, 'Destroy', 4))
     if create is not None and destroy is not None and create < destroy:
-        return codes[:create] + [
-            Command(instance_table, 'CreateLight',
-                    codes[create].args, aux=InstrAux(CreateLightInstWriter(), 4))
-        ] + codes[create + 1:destroy] + codes[destroy + 1:]
+        create_light = Command(instance_table, 'CreateLight',
+                               codes[create].args, aux=InstrAux(CreateLightInstWriter(), 4))
+        insert = find_index(codes, IsCommand(sequence, 'Insert', 4))
+        if insert is None:
+            return codes[:create] + [create_light] + codes[create + 1:destroy] + codes[destroy + 1:]
+        else:
+            return codes[:create] + [create_light] + codes[create + 1:insert] + [
+                Command(sequence, 'SetContent', [
+                    seq.data], aux=InstrAux(SetContentWriter(), 1), opt_target=True)
+            ] + codes[insert + 1:destroy] + codes[destroy + 1:]
     return codes

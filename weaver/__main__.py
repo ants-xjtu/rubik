@@ -6,8 +6,8 @@ from weaver.lang import Seq
 from weaver.pattern import Patterns
 
 b1 = BasicBlock.from_codes(eth_code).optimize()
-b2 = BasicBlock.from_codes(ip_code).optimize()#Patterns(ip_seq))
-b3 = BasicBlock.from_codes(tcp_code).optimize()#Patterns(tcp_seq))
+b2 = BasicBlock.from_codes(ip_code).optimize(Patterns(ip_seq))
+b3 = BasicBlock.from_codes(tcp_code).optimize(Patterns(tcp_seq))
 cxt = GlobalContext({next_ip: b2, next_tcp: b3})
 cxt.execute_block_recurse(b1, eth_action)
 cxt.execute_block_recurse(b2, ip_action, ip_data, ip_seq, True)

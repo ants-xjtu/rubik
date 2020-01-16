@@ -134,17 +134,14 @@ class CreateLightInstWriter(InstrWriter):
     def write(self, context: InstrWriter) -> str:
         pre = f'runtime->{context.recurse_context.prealloc()}'
         inst_aux = context.recurse_context.inst_struct.create_aux()
-        use_data = context.recurse_context.use_data
         if not context.recurse_context.bidirection:
             return (
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
-                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});'
             )
         else:
             return (
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
                 f'{inst_aux.name()}->flag = 0;\n'
-                f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});'
             )
 
 
