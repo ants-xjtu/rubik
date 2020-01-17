@@ -238,11 +238,10 @@ static inline WV_U8 WV_Insert(
         for (WV_U8 i = 0; i < seq->used_count; i += 1) {
             if (seq->nodes[i].right > right) {
                 if (seq->nodes[i].left >= right) {
-                    assert(i != 0);
-                    seq->used_count = i - 1;
+                    seq->used_count = i;
                 } else {
                     seq->nodes[i].right = right;
-                    seq->used_count = i;
+                    seq->used_count = i + 1;
                 }
                 break;
             }
