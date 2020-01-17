@@ -9,7 +9,7 @@ typedef struct _WV_Profile {
     WV_U32 next_checkpoint_sec;
     WV_F last_record_sec;
     WV_F last_10_throughput[10];
-    WV_F record_count;
+    WV_U8 record_count;
 } WV_Profile;
 
 WV_U8 WV_ProfileStart(WV_Profile *);

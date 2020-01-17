@@ -118,12 +118,40 @@ static inline WV_U8 WV_Insert(
     // printf("%u %u %u %u %u\n", offset, data.length, takeup_length, left, right);
     if (left != 0 || right != 0) {
         assert(left <= right);
-        // assert(left - seq->offset < WV_CONFIG_SeqBufferSize);
-        if (right - seq->offset > WV_CONFIG_SeqBufferSize) {
-            right = seq->offset + WV_CONFIG_SeqBufferSize;
-            if (left > right) {
-                left = right;
+
+        while (seq->used_count > 0) {
+            if (seq->nodes[0].right <= left) {
+                _RemoveNode(seq, 0);
+            } else {
+                if (seq->nodes[0].left < left) {
+                    seq->nodes[0].left = left;
+                }
+                break;
             }
+        }
+        for (WV_U8 i = 0; i < seq->used_count; i += 1) {
+            if (seq->nodes[i].right > right) {
+                if (seq->nodes[i].left >= right) {
+                    seq->used_count = i;
+                } else {
+                    seq->nodes[i].right = right;
+                    seq->used_count = i + 1;
+                }
+                break;
+            }
+        }
+        if (seq->offset < left && !seq->post_start) {
+            // left expected data out of window
+            for (WV_U8 i = 0; i < seq->used_count; i += 1) {
+                assert(seq->nodes[i].left >= left);
+                assert(seq->nodes[i].right - seq->offset <= WV_CONFIG_SeqBufferSize);
+                memmove(
+                    &seq->buffer[seq->nodes[i].left - left],
+                    &seq->buffer[seq->nodes[i].left - seq->offset],
+                    seq->nodes[i].right - seq->nodes[i].left);
+            }
+            // printf("%u %u\n", seq->offset, left);
+            seq->offset = left;
         }
 
         if (offset >= right || offset + takeup_length < left) {
@@ -147,6 +175,7 @@ static inline WV_U8 WV_Insert(
     }
     // printf("%u %u\n", takeup_length, data.length);
     assert(takeup_length < 3000);
+    _AssertNodes(seq);
 
     WV_U8 pos;
     for (pos = 0; pos < seq->used_count && seq->nodes[pos].left < offset; pos += 1)
@@ -158,6 +187,7 @@ static inline WV_U8 WV_Insert(
             data = WV_EMPTY;
         } else if (seq->post_start && offset + data.length > seq->postfix.left) {
             // hard out of window
+            data = WV_EMPTY;
         } else if (data.length != 0) {
             // assert(offset >= seq->offset);
             if (pos != 0 && offset <= seq->nodes[pos - 1].right) {
@@ -214,51 +244,25 @@ static inline WV_U8 WV_Insert(
             }
         }
     }
-    // printf("%u\n", seq->post_start);
+    if (seq->used_count > 0 && seq->nodes[seq->used_count - 1].right - seq->offset > WV_CONFIG_SeqBufferSize) {
+        if (seq->nodes[seq->used_count - 1].left - seq->offset < WV_CONFIG_SeqBufferSize) {
+            // right out of memory
+            seq->nodes[seq->used_count - 1].right = seq->offset + WV_CONFIG_SeqBufferSize;
+            data = WV_SliceBefore(data, seq->offset + WV_CONFIG_SeqBufferSize - offset);
+        } else {
+            // full out of memory
+            seq->used_count -= 1;
+            data = WV_EMPTY;
+        }
+    }
     _AssertNodes(seq);
 
     if (use_data && data.length != 0) {
-        if (offset >= seq->offset + WV_CONFIG_SeqBufferSize) {
-            // full out of memory
-            data = WV_EMPTY;
-        } else if (offset + data.length > seq->offset + WV_CONFIG_SeqBufferSize) {
-            // right out of memory
-            data = WV_SliceBefore(data, seq->offset + WV_CONFIG_SeqBufferSize - offset);
-        }
-        // printf("%u %u %u\n", offset, seq->offset, data.length);
-        assert(offset - seq->offset + data.length <= WV_CONFIG_SeqBufferSize || data.length == 0);
+        assert(offset >= seq->offset);
+        assert(offset - seq->offset + data.length <= WV_CONFIG_SeqBufferSize);
         // printf("memcpy (insert)\n");
         memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
     }
-
-    if (left != 0 || right != 0) {
-        while (seq->used_count > 0) {
-            if (seq->nodes[0].right <= left) {
-                _RemoveNode(seq, 0);
-            } else {
-                if (seq->nodes[0].left < left) {
-                    seq->nodes[0].left = left;
-                }
-                break;
-            }
-        }
-        if (seq->offset < left && !seq->post_start) {
-            seq->offset = left;
-        }
-        for (WV_U8 i = 0; i < seq->used_count; i += 1) {
-            if (seq->nodes[i].right > right) {
-                if (seq->nodes[i].left >= right) {
-                    seq->used_count = i;
-                } else {
-                    seq->nodes[i].right = right;
-                    seq->used_count = i + 1;
-                }
-                break;
-            }
-        }
-    }
-    // printf("%u %u %u %u %u %u %u\n", offset, data.length, takeup_length, left, right, seq->post_start, seq->postfix.left);
-
     return _AssertNodes(seq);
 }
 
