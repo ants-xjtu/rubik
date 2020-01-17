@@ -136,12 +136,12 @@ class CreateLightInstWriter(InstrWriter):
         inst_aux = context.recurse_context.inst_struct.create_aux()
         if not context.recurse_context.bidirection:
             return (
-                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
+                f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});'
             )
         else:
             return (
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
-                f'{inst_aux.name()}->flag = 0;\n'
+                f'{inst_aux.name()}->flag = 0;'
             )
 
 
@@ -174,6 +174,10 @@ class HeaderContainWriter(ValueWriter):
 
 
 class InsertWriter(InstrWriter):
+    def __init__(self, force_nodata=False):
+        super().__init__()
+        self.force_nodata = force_nodata
+
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
@@ -187,7 +191,7 @@ class InsertWriter(InstrWriter):
             f'{context.write_value(seq.offset)}, '
             f'{context.write_value(seq.data)}, '
             f'{context.write_value(seq.takeup)}, '
-            f'{context.recurse_context.use_data}, '
+            f'{"0" if self.force_nodata else context.recurse_context.use_data}, '
             f'{context.write_value(seq.window[0])}, '
             f'{context.write_value(seq.window[1])}'
             f');'
@@ -225,7 +229,14 @@ class SetContentWriter(InstrWriter):
 
 class EmptyAlignWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return f'WV_SeqEmptyAlign(&{context.instr_context.recurse_context.prefetch_name()}->seq, {context.write_value(context.instr_context.recurse_context.seq.offset)})'
+        return (
+            f'WV_SeqEmptyAlign('
+            f'&{context.instr_context.recurse_context.prefetch_name()}->seq, '
+            f'{context.write_value(context.instr_context.recurse_context.seq.offset)}, '
+            f'{context.write_value(context.instr_context.recurse_context.seq.data)}, '
+            f'{context.write_value(context.instr_context.recurse_context.seq.takeup)}'
+            f')'
+        )
 
 
 class DestroyInstWriter(InstrWriter):
