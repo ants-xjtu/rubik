@@ -58,6 +58,7 @@ static inline WV_U8 _AssertNodes(WV_Seq* seq)
     for (WV_U8 i = 0; i < seq->used_count; i += 1) {
         assert(seq->nodes[i].left < seq->nodes[i].right);
         assert(seq->nodes[i].left >= seq->offset);
+        assert(seq->nodes[i].right - seq->offset <= WV_CONFIG_SeqBufferSize);
     }
     for (WV_U8 i = 1; i < seq->used_count; i += 1) {
         assert(seq->nodes[i - 1].right < seq->nodes[i].left);
@@ -103,6 +104,7 @@ static inline WV_U8 WV_Insert(
     WV_U32 right // window right
 )
 {
+    // printf("%u %u\n", takeup_length, data.length);
     if (seq->set_offset) {
         seq->offset = offset;
         seq->set_offset = 0;
@@ -116,6 +118,14 @@ static inline WV_U8 WV_Insert(
     // printf("%u %u %u %u %u\n", offset, data.length, takeup_length, left, right);
     if (left != 0 || right != 0) {
         assert(left <= right);
+        // assert(left - seq->offset < WV_CONFIG_SeqBufferSize);
+        if (right - seq->offset > WV_CONFIG_SeqBufferSize) {
+            right = seq->offset + WV_CONFIG_SeqBufferSize;
+            if (left > right) {
+                left = right;
+            }
+        }
+
         if (offset >= right || offset + takeup_length < left) {
             // full out of window
             takeup_length = data.length = 0;
@@ -135,8 +145,8 @@ static inline WV_U8 WV_Insert(
             }
         }
     }
-    // printf("%u\n", takeup_length);
-    assert(takeup_length < 1500);
+    // printf("%u %u\n", takeup_length, data.length);
+    assert(takeup_length < 3000);
 
     WV_U8 pos;
     for (pos = 0; pos < seq->used_count && seq->nodes[pos].left < offset; pos += 1)

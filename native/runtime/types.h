@@ -44,8 +44,11 @@ static const WV_ByteSlice WV_EMPTY = { .cursor = NULL, .length = 0 };
 
 static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index)
 {
-    if (slice.cursor == NULL || slice.length < index) {
+    if (slice.cursor == NULL) {
         return WV_EMPTY;
+    }
+    if (slice.length < index) {
+        return (WV_ByteSlice){ .cursor = slice.cursor + slice.length, .length = 0 };
     }
     WV_ByteSlice after = { .cursor = slice.cursor + index, .length = slice.length - index };
     return after;
