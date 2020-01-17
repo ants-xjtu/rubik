@@ -160,13 +160,13 @@ class GlobalContext:
             'return rt;',
         ]))
         free_runtime = 'WV_U8 WV_FreeRuntime(WV_Runtime *rt) ' + make_block('\n'.join([
-            'free(rt);',
             *[
                 # TODO: free instances in table
                 f'tommy_hashdyn_done(&rt->hash_{lid});\n' +
                 f'free(rt->{GlobalContext.prealloc(lid)});'
                 for lid, struct in self.required_inst.items()
             ],
+            'free(rt);',
             'return 0;',
         ]))
         get_profile = 'WV_Profile *WV_GetProfile(WV_Runtime *rt) ' + make_block('\n'.join([

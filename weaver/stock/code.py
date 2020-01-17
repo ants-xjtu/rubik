@@ -50,6 +50,7 @@ ip: List[Instr] = [
             saddr, daddr], aux=PrefetchInstWriter()),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
+        SetValue(header.ip_state, Value([header.ip_state, instance_table], '{0}')),
     ], [
         Command(instance_table, 'Create', [],
                 opt_target=True, aux=CreateInstWriter()),
@@ -144,7 +145,7 @@ FIN_WAIT = Value([], '4')
 CLOSE_WAIT = Value([], '5')
 LAST_ACK = Value([], '6')
 TERMINATE = Value([], '7')
-trans_fake = Value([], '0')
+trans_fake = Value([], '10')
 trans_hs1 = Value([], '1')
 trans_hs2 = Value([], '2')
 trans_buffering = Value([], '4')  # reorder to disable duplicate code detection
@@ -194,7 +195,7 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
 
 def to_rst(from_state: Value):
     to_state = AggValue([from_state], f'{{0}} + {TERMINATE}')
-    trans = AggValue([from_state], f'{{0}} + {trans_wv4}')
+    trans = AggValue([from_state], f'{{0}} + {trans_fake}')
     return If(Value([header_parser, header.tcp_rst], '{1}'), [
         SetValue(psm_trans, trans),
         SetValue(header.tcp_data_state, to_state),
@@ -219,6 +220,7 @@ tcp: List[Instr] = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})', aux=InstExistWriter()), [
         Command(instance_table, 'Fetch', [
                 saddr, sport, daddr, dport], aux=FetchInstWriter()),
+        SetValue(header.tcp_data_state, Value([header.tcp_data_state, instance_table], '{0}')),
         SetValue(reg_to_active, Value(
             [instance_table], 'InstToActive()', ToActiveWriter())),
     ], [
@@ -265,6 +267,7 @@ tcp: List[Instr] = [
             list(tcp_seq.window))
     ], opt_target=True, aux=InsertWriter()),
     SetValue(psm_triggered, no),
+    SetValue(psm_trans, no),
     If(EqualTest(psm_triggered, no), [
         If(EqualTest(header.tcp_data_state, CLOSED), [
             If(AggValue([value_syn], '{0} == 0'), [
@@ -391,8 +394,8 @@ tcp: List[Instr] = [
                 opt_target=True, aux=SeqAssembleWriter()),
     ], []),
     SetValue(tcp_content, Value([sequence], aux=ContentWriter())),
-    Command(runtime, 'Call', [Value([tcp_content, reg_to_active, psm_trans, header.tcp_data_state])], opt_target=True, aux=CallWriter(
-        'handle_tcp_payload', [tcp_content, reg_to_active, psm_trans, header.tcp_data_state])),
+    Command(runtime, 'Call', [Value([tcp_content, reg_to_active, psm_trans, header.tcp_data_state, psm_triggered])], opt_target=True, aux=CallWriter(
+        'handle_tcp_payload', [tcp_content, reg_to_active, psm_trans, header.tcp_data_state, psm_triggered])),
     If(EqualTest(header.tcp_data_state, TERMINATE), [
         Command(instance_table, 'Destroy', [],
                 opt_target=True, aux=DestroyInstWriter()),
