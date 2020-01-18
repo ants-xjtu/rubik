@@ -115,6 +115,8 @@ static inline WV_U8 WV_Insert(
     }
     assert(data.length <= takeup_length);
     // printf("%u %u %u %u %u %u %u\n", offset, data.length, takeup_length, left, right, seq->post_start, seq->postfix.left);
+    // printf("used_count: %u\n", seq->used_count);
+    // printf("seq->offset: %u\n", seq->offset);
     // printf("%u %u %u %u %u\n", offset, data.length, takeup_length, left, right);
     if (left != 0 || right != 0) {
         assert(left <= right);
@@ -140,7 +142,7 @@ static inline WV_U8 WV_Insert(
                 break;
             }
         }
-        if (seq->offset < left && !seq->post_start) {
+        if (seq->offset < left) {
             // left expected data out of window
             for (WV_U8 i = 0; i < seq->used_count; i += 1) {
                 assert(seq->nodes[i].left >= left);
@@ -173,7 +175,7 @@ static inline WV_U8 WV_Insert(
             }
         }
     }
-    // printf("%u %u\n", takeup_length, data.length);
+    // printf("used_count: %u\n", seq->used_count);
     assert(takeup_length < 3000);
     _AssertNodes(seq);
 
@@ -213,7 +215,7 @@ static inline WV_U8 WV_Insert(
             seq->pre_done = 1;
 
             if (data.length != takeup_length && !seq->post_start) {
-                // assert(!seq->post_start);
+                assert(!seq->post_start);
                 // printf("set post_start #1\n");
                 seq->post_start = 1;
                 seq->postfix = (WV_SeqMeta){ .left = offset + data.length, .right = offset + takeup_length };
@@ -268,16 +270,19 @@ static inline WV_U8 WV_Insert(
 
 static inline WV_U8 WV_SeqReady(WV_Seq* seq)
 {
+    // printf("used_count: %u\n", seq->used_count);
     if (seq->used_count > 0 && seq->nodes[0].left != seq->offset) {
         return 0;
     }
+    // printf("offset: %u\n", seq->offset);
     if (!seq->post_start) {
         return 1;
     }
     if (seq->used_count == 0) {
         // printf("offset: %u postfix.left: %u\n", seq->offset, seq->postfix.left);
-        return seq->offset == seq->postfix.left;
+        return seq->offset >= seq->postfix.left;
     } else {
+        // printf("nodes[0].right: %u postfix.left: %u\n", seq->nodes[0].right, seq->postfix.left);
         return seq->nodes[0].right == seq->postfix.left;
     }
 }

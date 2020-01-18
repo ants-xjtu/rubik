@@ -129,6 +129,5 @@ dmypy.json
 .pyre/
 
 
-*.pcap
-*.cap
+pcap
 weaver_whitebox.c

@@ -50,7 +50,8 @@ ip: List[Instr] = [
             saddr, daddr], aux=PrefetchInstWriter()),
     If(AggValue([Value([instance_table])], 'InstExist()', InstExistWriter()), [
         Command(instance_table, 'Fetch', [], aux=FetchInstWriter()),
-        SetValue(header.ip_state, Value([header.ip_state, instance_table], '{0}')),
+        SetValue(header.ip_state, Value(
+            [header.ip_state, instance_table], '{0}')),
     ], [
         Command(instance_table, 'Create', [],
                 opt_target=True, aux=CreateInstWriter()),
@@ -194,11 +195,10 @@ def update_window(that_lwnd: int, that_wscale: int, that_wsize: int, this_lwnd: 
 
 
 def to_rst(from_state: Value):
-    to_state = AggValue([from_state], f'{{0}} + {TERMINATE}')
     trans = AggValue([from_state], f'{{0}} + {trans_fake}')
     return If(Value([header_parser, header.tcp_rst], '{1}'), [
         SetValue(psm_trans, trans),
-        SetValue(header.tcp_data_state, to_state),
+        SetValue(header.tcp_data_state, TERMINATE),
         SetValue(psm_triggered, yes),
     ])
 
@@ -220,7 +220,8 @@ tcp: List[Instr] = [
     If(AggValue([Value([instance_table]), saddr, sport, daddr, dport], 'InstExist({1}, {2}, {3}, {4})', aux=InstExistWriter()), [
         Command(instance_table, 'Fetch', [
                 saddr, sport, daddr, dport], aux=FetchInstWriter()),
-        SetValue(header.tcp_data_state, Value([header.tcp_data_state, instance_table], '{0}')),
+        SetValue(header.tcp_data_state, Value(
+            [header.tcp_data_state, instance_table], '{0}')),
         SetValue(reg_to_active, Value(
             [instance_table], 'InstToActive()', ToActiveWriter())),
     ], [
@@ -233,7 +234,8 @@ tcp: List[Instr] = [
         SetValue(header.tcp_data_active_wsize, Value([runtime], 'WV_U32_MAX')),
         SetValue(header.tcp_data_active_wscale, no),
         SetValue(header.tcp_data_active_lwnd, no),
-        SetValue(header.tcp_data_passive_wsize, Value([runtime], 'WV_U32_MAX')),
+        SetValue(header.tcp_data_passive_wsize,
+                 Value([runtime], 'WV_U32_MAX')),
         SetValue(header.tcp_data_passive_wscale, no),
         SetValue(header.tcp_data_passive_lwnd, no),
         SetValue(header.tcp_data_seen_ack, no),

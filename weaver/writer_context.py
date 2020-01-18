@@ -185,7 +185,7 @@ class GlobalContext:
                     call_text += f'\n  {reg_aux[reg].type_decl()} _{reg},'
                 call_text = call_text[:-1]  # eat postfix comma
                 call_text += '\n) '
-            call_text += make_block('//')
+            call_text += make_block('return 0;')
             text += '\n\n' + call_text
         return text
 
