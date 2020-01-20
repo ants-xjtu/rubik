@@ -1,22 +1,62 @@
-# for tee >(...)
 SHELL := /bin/bash
 
-T ?= pcap
-A ?= weaver_whitebox.c
 
+### TARGET ###
+BUILD_DIR = ./build/
+APP = procpkts
+A ?= weaver_whitebox.template.c
+T ?= pcap
 bb := weaver_blackbox.c
 wb := weaver_whitebox.template.c
 sep = Weaver Auto-generated Blackbox Code
 
-all: procpkts
+### GCC ###
+GCC = gcc
+GCC_OPT = -m64 # -Wall -DNEWEV -Werror
 
-# TODO: native/weaver.h
-procpkts: $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
-	$(CC) $(cflags) -g -o $@ $^ -I./native -I./native/runtime/tommyds -lpcap
+#DBG_OPT = -DDBGMSG -DDBGFUNC -DSTREAM -DSTATE -DTSTAT -DAPP -DEPOLL
+#DBG_OPT = -DDBGMSG -DDBGFUNC -DSTREAM -DSTATE
+#DBG_OPT += -DPKTDUMP
+#DBG_OPT += -DDUMP_STREAM
+#GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += -DNDEBUG -O3 -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += $(DBG_OPT)
 
-gen:
-	# https://stackoverflow.com/a/7104422
-	python3 -m weaver | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+### LIBRARIES AND INCLUDES ###
+INC_DIR = ./native
+INC= -I$(INC_DIR) -I$(INC_DIR)/runtime -I$(INC_DIR)/runtime/tommyds
+
+### SOURCE FILES ###
+SRCS = $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
+
+ifeq ($(T), pcap)
+LIB_FLAGS += -lpcap
+endif
+
+ifeq ($(T), dpdk)
+ifeq ($(RTE_SDK),)
+$(error "Please define RTE_SDK environment variable")
+endif
+# DPDK LIBRARY and HEADER
+RTE_TARGET ?= x86_64-native-linuxapp-gcc
+DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
+DPDK_LIB=$(RTE_SDK)/$(RTE_TARGET)/lib/
+include $(RTE_SDK)/mk/rte.vars.mk
+
+DPDK_MACHINE_FLAGS=$(MACHINE_CFLAGS)
+DPDK_LIB_FLAGS = -ldpdk -ldl -lnuma -lpthread
+
+INC += ${DPDK_MACHINE_FLAGS} -I${DPDK_INC} -include $(DPDK_INC)/rte_config.h
+LIBS += -L$(DPDK_LIB)
+LIB_FLAGS += $(DPDK_LIB_FLAGS)
+endif
+
+
+### GOALS ###
+all: $(APP)
+
+$(APP): $(SRCS)
+	$(GCC) $(GCC_OPT) -o $@ $^ $(INC) $(LIBS) $(LIB_FLAGS)
 
 native/runtime/libwvrt.a:
 	$(MAKE) -C native/runtime
@@ -27,3 +67,8 @@ clean:
 	$(MAKE) -C native/runtime clean
 
 .PHONY: all clean weaver_blackbox.c native/runtime/libwvrt.a
+
+gen:
+	# https://stackoverflow.com/a/7104422
+	python3.7 -m weaver | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+
