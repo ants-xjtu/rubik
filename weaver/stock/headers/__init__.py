@@ -1,3 +1,6 @@
+from weaver.lang import Byte
+
+
 class ethernet:
     src_mac1 = Byte(2)
     src_mac2 = Byte(2)

@@ -1,5 +1,5 @@
 from weaver.stock.headers import ethernet as ethernet_header
-from weaver.lang import *
+from weaver.lang import connectionless, parse
 
 
 def ethernet():
