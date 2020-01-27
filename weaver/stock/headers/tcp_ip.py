@@ -1,9 +1,9 @@
-from weaver.lang import Bit, Byte, Slice, U16, U32
+from weaver.lang import Bit, Byte, Slice, U16, U32, self, LogicalByte
 
 
 class ip:
     version = Bit(4)
-    header_length = Bit(4) << 2
+    header_length = Bit(4)(self << 2)
     tos = Byte(1)
     total_length = U16()
     identifier = Byte(2)
@@ -18,8 +18,8 @@ class ip:
     src_ip = Byte(4)
     dst_ip = Byte(4)
 
-    offset = Byte(2).compute(offset_upper << 8 + offset_lower)
-    length: Byte(2).compute(total_length - header_length)
+    offset = LogicalByte(2)(offset_upper << 8 + offset_lower)
+    length = LogicalByte(2)(total_length - header_length)
 
 
 class tcp:
@@ -42,35 +42,42 @@ class tcp:
     urg_ptr = U16()
 
 
+@type_length(byte=1)
 class tcp_options:
-    tag = Byte(1)
-
-    class eol(tag == 0):
+    @type(0)
+    class eol:
         pass
 
-    class nop(tag == 1):
+    @type(1)
+    class nop:
         pass
 
-    class mss(tag == 2):
+    @type(2)
+    class mss:
         length = Byte(1)
         value = Byte(2)
 
-    class ws(tag == 3):
+    @type(3)
+    class ws:
         length = Byte(1)
         value = Byte(1)
 
-    class sack_perm(tag == 4):
+    @type(4)
+    class sack_perm:
         length = Byte(1)
 
-    class ts(tag == 8):
+    @type(8)
+    class ts:
         length = Byte(1)
         value = Byte(4)
         echo_reply = Byte(4)
 
-    class cc_new(tag == 12):
+    @type(12)
+    class cc_new:
         length = Byte(1)
         value = Byte(4)
 
-    class default:
+    @default
+    class blank:
         length = Byte(1)
         value = Slice((length - 2) << 3)
