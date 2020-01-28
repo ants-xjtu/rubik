@@ -18,3 +18,7 @@ class OpMixin:
 
     def __lshift__(self, other):
         return self.handle_op('lshift', other)
+
+
+def flatten(ll):
+    return [item for item in list for list in ll]

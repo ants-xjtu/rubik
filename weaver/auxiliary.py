@@ -76,6 +76,12 @@ class StructRegAux(RegAux):
             return f'{self.type_decl()} _{reg}: {self.bit_len};'
 
 
+class InstRegAux(StructRegAux):
+    def __init__(self, byte_len, init_value):
+        super().__init__(byte_len)
+        self.init_value = init_value
+
+
 class HeaderStructAux:
     def __init__(self, struct):
         self.struct = struct
@@ -198,7 +204,6 @@ class InstrAux:
 
     def write(self, context):
         return self.writer.write(context)
-
 
 
 class ValueAux:

@@ -61,6 +61,11 @@ class InstrWriter:
             assert False, 'should call `write` on subclasses'
 
 
+class NoneWriter(InstrWriter):
+    def write(self, context) -> str:
+        return '// placeholder'
+
+
 class InstExistWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
         assert context.instr_context.recurse_context.inst_struct is not None
