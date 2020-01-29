@@ -1,7 +1,6 @@
 from __future__ import annotations
-from weaver.auxiliary import reg_aux
+from weaver.auxiliary import reg_aux, instance as instance_table, sequence, runtime, header_parser
 from weaver.code import AggValue, If, SetValue, Command
-from weaver.stock.reg import instance_table, sequence, runtime, header_parser
 from weaver.util import make_block
 # pylint: disable = unused-wildcard-import
 from weaver.header import *
@@ -186,7 +185,7 @@ class InsertWriter(InstrWriter):
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == sequence
-        assert instance_table in context.instr.args[0].regs
+        # assert instance_table in context.instr.args[0].regs
         assert context.recurse_context.inst_struct is not None
         assert context.recurse_context.seq is not None
         seq = context.recurse_context.seq

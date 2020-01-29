@@ -222,7 +222,7 @@ class BlockRecurseContext:
 
     def execute_block(self, block: BasicBlock):
         text = f'L{block.block_id}: '
-        # print(block)
+        print(block)
         codes_text = '\n'.join(
             InstrContext(self, block, instr).write() for instr in block.codes)
         if codes_text:

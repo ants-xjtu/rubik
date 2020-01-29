@@ -1,7 +1,6 @@
 from weaver.code import Command, Choice, AggValue, Value, If
-from weaver.stock.reg import sequence, instance_table, runtime
 from weaver.writer import ContentWriter, CreateLightInstWriter, EmptyAlignWriter, SetContentWriter, InsertWriter
-from weaver.auxiliary import InstrAux, ValueAux
+from weaver.auxiliary import InstrAux, ValueAux, sequence, instance as instance_table, runtime
 
 
 class Patterns:

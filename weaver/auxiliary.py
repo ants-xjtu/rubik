@@ -57,6 +57,19 @@ class RegAux:
         return f'{self.type_decl()} _{reg};'
 
 
+runtime = 0
+reg_aux[runtime] = RegAux(abstract=True)
+header_parser = 1
+reg_aux[header_parser] = RegAux(abstract=True)
+instance = 2
+reg_aux[instance] = RegAux(abstract=True)
+sequence = 3
+reg_aux[sequence] = RegAux(abstract=True)
+
+# user-defined register starts from 100
+reg_aux[99] = RegAux(abstract=True)
+
+
 class StructRegAux(RegAux):
     def __init__(self, byte_len: int, bit_len: int = None):
         if bit_len is not None:
@@ -80,7 +93,6 @@ class InstRegAux(StructRegAux):
     def __init__(self, byte_len, init_value):
         super().__init__(byte_len)
         self.init_value = init_value
-
 
 class HeaderStructAux:
     def __init__(self, struct):
