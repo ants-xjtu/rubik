@@ -114,9 +114,13 @@ class Value:
         reg_values = []
         for reg in self.regs:
             if reg not in consts:
-                return None
-            reg_values.append(consts[reg])
-        return eval(self.eval_template.format(*reg_values))
+                reg_values.append('<null>')
+            else:
+                reg_values.append(consts[reg])
+        try:
+            return eval(self.eval_template.format(*reg_values))
+        except:
+            return None
 
 
 class AggValue(Value):
@@ -133,9 +137,13 @@ class AggValue(Value):
         for value in self.values:
             result = value.try_eval(consts)
             if result is None:
-                return None
-            evaluated.append(result)
-        return eval(self.agg_eval.format(*evaluated))
+                evaluated.append('<cannot evaluate>')
+            else:
+                evaluated.append(result)
+        try:
+            return eval(self.agg_eval.format(*evaluated))
+        except:
+            return None
 
 
 class EqualTest(AggValue):
