@@ -1,29 +1,26 @@
 # pylint: disable = unused-wildcard-import
 from weaver.lang import *
-from weaver.code import *
-from weaver.auxiliary import *
-from weaver.writer import *
 
 
 def ip():
     proto = ProtoCore()
 
     parser = HeaderParser.parse(proto, Layout({
-        'ver': RegProto(StructRegAux(1, 4)),
-        'ihl': RegProto(StructRegAux(1, 4)),
-        'tos': RegProto(StructRegAux(1)),
-        'length': RegProto(StructRegAux(2)),
-        'identifier': RegProto(StructRegAux(2)),
-        '_1': RegProto(StructRegAux(1, 1)),
-        'dont_frag': RegProto(StructRegAux(1, 1)),
-        'more_frag': RegProto(StructRegAux(1, 1)),
-        'offset_1': RegProto(StructRegAux(1, 5)),
-        'offset_2': RegProto(StructRegAux(1)),
-        'ttl': RegProto(StructRegAux(1)),
-        'protocol': RegProto(StructRegAux(1)),
-        'checksum': RegProto(StructRegAux(2)),
-        'srcip': RegProto(StructRegAux(4)),
-        'dstip': RegProto(StructRegAux(4)),
+        'ver': HeaderRegProto(StructRegAux(1, 4)),
+        'ihl': HeaderRegProto(StructRegAux(1, 4)),
+        'tos': HeaderRegProto(StructRegAux(1)),
+        'length': HeaderRegProto(StructRegAux(2)),
+        'identifier': HeaderRegProto(StructRegAux(2)),
+        '_1': HeaderRegProto(StructRegAux(1, 1)),
+        'dont_frag': HeaderRegProto(StructRegAux(1, 1)),
+        'more_frag': HeaderRegProto(StructRegAux(1, 1)),
+        'offset_1': HeaderRegProto(StructRegAux(1, 5)),
+        'offset_2': HeaderRegProto(StructRegAux(1)),
+        'ttl': HeaderRegProto(StructRegAux(1)),
+        'protocol': HeaderRegProto(StructRegAux(1)),
+        'checksum': HeaderRegProto(StructRegAux(2)),
+        'srcip': HeaderRegProto(StructRegAux(4)),
+        'dstip': HeaderRegProto(StructRegAux(4)),
     }))
 
     data = SetupInst(DataKey([
@@ -70,6 +67,6 @@ def ip():
         'assemble': Event(EqualExpr(proto.state, ConstRaw(Value([], str(s_dump)))), [
             seq.assemble(),
         ])
-    })
+    }, {}, {})
 
     return Proto(proto, parser, data, auto, general, seq, state_machine, events)

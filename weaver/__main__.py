@@ -1,14 +1,25 @@
-from weaver.stock.protocols.tcp_ip import ip
+import importlib
+import sys
 from weaver.writer_context import GlobalContext
 
-bundle = ip().compile_bundle()
-# for instr in bundle.codes:
-#     print(instr)
-cxt = GlobalContext({})
-bundle.execute(cxt)
-cxt.execute_all()
+
+conf = importlib.import_module(sys.argv[1])
+stack = conf.stack
+stack_entry = conf.stack_entry
+stack_map = conf.stack_map
+
+nexti_map = {}
+compiled = {}
+for name, allocated_bundle in stack.items():
+    compiled[name] = allocated_bundle.compile_bundle(stack_map.get(name, {}))
+    compiled[name].register_nexti(nexti_map)
+
+context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})
+for bundle in compiled.values():
+    bundle.execute(context)
+context.execute_all()
 
 print('/* Weaver Whitebox Code Template */')
-print(cxt.write_template())
+print(context.write_template())
 print('/* Weaver Auto-generated Blackbox Code */')
-print(cxt.write_all(bundle.recurse))
+print(context.write_all(compiled[stack_entry].recurse))

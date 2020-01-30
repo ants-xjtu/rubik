@@ -60,6 +60,7 @@ class GlobalContext:
             '#else\n' +
             '#define hash(k, s) tommy_hash_u32(0, k, s)\n' +
             '#endif\n\n' +
+            '// external definitions\n' +
             self.write_extern_calls_decl() + '\n\n' +
             self.write_header_types_decl() + '\n\n' +
             self.write_inst_types_decl() + '\n\n' +
@@ -222,7 +223,7 @@ class BlockRecurseContext:
 
     def execute_block(self, block: BasicBlock):
         text = f'L{block.block_id}: '
-        print(block)
+        # print(block)
         codes_text = '\n'.join(
             InstrContext(self, block, instr).write() for instr in block.codes)
         if codes_text:

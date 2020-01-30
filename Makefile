@@ -3,6 +3,7 @@ SHELL := /bin/bash
 
 T ?= pcap
 A ?= weaver_whitebox.c
+C ?= stack_conf
 
 bb := weaver_blackbox.c
 wb := weaver_whitebox.template.c
@@ -16,7 +17,7 @@ procpkts: $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
 
 gen:
 	# https://stackoverflow.com/a/7104422
-	python3 -m weaver | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+	python3 -m weaver $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
 
 native/runtime/libwvrt.a:
 	$(MAKE) -C native/runtime

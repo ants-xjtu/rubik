@@ -15,13 +15,16 @@ class Struct:
         self.struct_id = Struct.count
         Struct.count += 1
         self.regs: List[Reg] = regs
+        # print(self.struct_id)
         self.byte_length = Struct.calculate_length(regs)
         self.aux_creator = aux_creator
 
     @staticmethod
     def calculate_length(regs: List[Reg]) -> int:
+        # print(regs)
         bit_length = 0
         for reg in (reg_aux[reg_id] for reg_id in regs):
+            # print(reg.byte_len)
             assert isinstance(reg, StructRegAux)
             assert reg.byte_len is not None
             if reg.bit_len is not None:
