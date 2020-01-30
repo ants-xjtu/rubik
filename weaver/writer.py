@@ -25,7 +25,7 @@ class TemplateValueWriter(ValueWriter):
         self.cexpr_template = cexpr_template
 
     def write(self, context: ValueContext) -> str:
-        print(self.cexpr_template, context.value.regs)
+        # print(self.cexpr_template, context.value.regs)
         return self.cexpr_template.format(
             *(reg_aux.write(context.instr_context, reg) for reg in context.value.regs))
 

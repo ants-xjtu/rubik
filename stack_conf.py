@@ -3,9 +3,9 @@ from weaver.lang import Event, EqualExpr, ConstRaw, Call
 from weaver.code import Value
 
 
-stack['ip'].proto.events.event_map['count'] = Event(
-    EqualExpr(stack['ip'].proto.parser.get('protocol'), ConstRaw(Value([], '6'))), [
-        Call('count_tcp_packet', []),
+stack['tcp'].proto.events.event_map['exam'] = Event(
+    ConstRaw(Value([], '1')), [
+        Call('exam_tcp_content', []),
     ]
 )
-stack['ip'].proto.events.before_map['count'] = {'assemble'}
+stack['tcp'].proto.events.before_map['exam'] = {'assemble'}

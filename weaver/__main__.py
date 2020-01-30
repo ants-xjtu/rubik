@@ -11,7 +11,7 @@ stack_map = conf.stack_map
 nexti_map = {}
 compiled = {}
 for name, allocated_bundle in stack.items():
-    compiled[name] = allocated_bundle.compile_bundle(name, stack_map.get(name, {}))
+    compiled[name] = allocated_bundle.compile_bundle(name, stack_map.get(name, None))
     compiled[name].register_nexti(nexti_map)
 
 context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})

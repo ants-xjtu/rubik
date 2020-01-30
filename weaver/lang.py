@@ -317,7 +317,7 @@ class Expr:
         return AggValue(
             [node.compile(proto, env) for node in self.nodes],
             self.eval_template,
-            ValueAux(TemplateValueWriter(self.template))
+            ValueAux(AggValueWriter(self.template))
         )
 
 
@@ -370,30 +370,39 @@ class Layout:
 
 
 class HeaderParser:
-    def __init__(self, actions, reg_map):
+    def __init__(self, actions, reg_map, struct_map):
         self.actions = actions
         self.reg_map = reg_map
+        self.struct_map = struct_map
 
     @staticmethod
     def parse(proto, layout):
-        return HeaderParser(layout.deconstruct(proto, proto.env), layout.reg_map)
+        return HeaderParser(layout.deconstruct(proto, proto.env), layout.reg_map, {})
 
     @staticmethod
     def tagged(proto, cond, tag, layout_map):
         action_map = {}
         reg_map = {}
+        struct_map = {}
         compiled_cond = cond.compile(proto, proto.env)
         tag_reg = tag.alloc(proto.env)
         for (tag_value, name), layout in layout_map.items():
             action_map[tag_value] = layout.deconstruct(proto, proto.env)
-            reg_map.update({f'{name}.{reg_name}': reg for reg_name, reg in layout.reg_map.items()})
-        return HeaderParser([TaggedParseLoop(compiled_cond, tag_reg, action_map)], reg_map)
+            if action_map[tag_value] != []:
+                assert isinstance(action_map[tag_value][0], LocateStruct)
+                struct_map[name] = action_map[tag_value][0].struct
+            reg_map.update(
+                {f'{name}.{reg_name}': reg for reg_name, reg in layout.reg_map.items()})
+        return HeaderParser([TaggedParseLoop(compiled_cond, tag_reg, action_map)], reg_map, struct_map)
 
     def get(self, name):
         return self.reg_map[name]
 
     def then(self, parser):
-        return HeaderParser(self.actions + parser.actions, {**self.reg_map, **parser.reg_map})
+        return HeaderParser(self.actions + parser.actions, {**self.reg_map, **parser.reg_map}, {**self.struct_map, **parser.struct_map})
+
+    def contain(self, name):
+        return ConstRaw(Value([header_parser], aux=ValueAux(HeaderContainWriter(self.struct_map[name]))))
 
 
 class HeaderRegProto(RegProto):
@@ -436,8 +445,10 @@ class ProtoCore:
             Value([sequence], aux=ValueAux(SeqReadyWriter())))
         self.payload = ConstRaw(
             Value([header_parser], aux=ValueAux(PayloadWriter())))
-        self.parsed_length = ConstRaw(Value([header_parser], aux=ValueAux(ParsedLengthWriter())))
-        self.total_length = ConstRaw(Value([header_parser], aux=ValueAux(TotalLengthWriter())))
+        self.parsed_length = ConstRaw(
+            Value([header_parser], aux=ValueAux(ParsedLengthWriter())))
+        self.total_length = ConstRaw(
+            Value([header_parser], aux=ValueAux(TotalLengthWriter())))
         self.env = {}
 
 
@@ -540,8 +551,6 @@ class AllocatedBundle:
                     self.proto.core, env, next_codes)]
             else:
                 codes += next_codes
-        else:
-            assert False
         return CompiledBundle(
             BasicBlock.from_codes(codes).optimize(Patterns(seq)),
             actions, self.inst_struct, seq, self.proto.seq.use_data if self.proto.seq is not None else False, nexti)

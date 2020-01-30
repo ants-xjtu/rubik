@@ -130,7 +130,9 @@ def tcp(allocated_ip):
 
     def update_wnd(that_lwnd, that_wscale, that_wndsize, this_lwnd, this_wscale, this_wndsize):
         return [
-            #
+            When(parser.contain('ws'), [
+                Assign(that_wscale, parser.get('ws.value')),
+            ], []),
             Assign(that_wndsize, parser.get('wndsize')),
             Assign(that_lwnd, parser.get('seqnum')),
             Assign(auto.get('wndsize'), Expr(
