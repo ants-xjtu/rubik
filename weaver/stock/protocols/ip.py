@@ -28,8 +28,10 @@ def ip():
         parser.get('dstip'),
     ]), {
         #
-    }, {
-        'expr1': Expr([parser.get('more_frag')], '{0} == 0'),
+    })
+
+    vdata = SetupVExpr({
+        'expr1': EqualExpr(parser.get('more_frag'), ConstRaw(zero)),
     })
 
     auto = SetupAuto({
@@ -58,8 +60,8 @@ def ip():
             EqualExpr(parser.get('more_frag'), ConstRaw(one)): TransDest(t_more, s_frag, []),
         }),
         TransMap(s_frag, {
-            data.vexpr('expr1'): TransDest(t_last, s_dump, []),
-            data.zexpr('expr1'): TransDest(t_frag, s_frag, []),
+            vdata.vexpr('expr1'): TransDest(t_last, s_dump, []),
+            vdata.zexpr('expr1'): TransDest(t_frag, s_frag, []),
         })
     ], {s_dump})
 
@@ -69,4 +71,4 @@ def ip():
         ])
     }, {}, {})
 
-    return Proto(proto, parser, data, auto, general, seq, state_machine, events)
+    return Proto(proto, parser, data, vdata, auto, general, seq, state_machine, events)

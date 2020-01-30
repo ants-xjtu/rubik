@@ -12,6 +12,7 @@ class RegTable:
         self.regs: Dict[Reg, RegAux] = {}
 
     def __getitem__(self, reg: Reg):
+        # print(reg)
         return self.regs[reg]
 
     count = 0
@@ -93,6 +94,13 @@ class InstRegAux(StructRegAux):
     def __init__(self, byte_len, init_value):
         super().__init__(byte_len)
         self.init_value = init_value
+
+
+class ByteSliceRegAux(RegAux):
+    def __init__(self, length_expr):
+        super().__init__(None)
+        self.length_expr = length_expr
+
 
 class HeaderStructAux:
     def __init__(self, struct):

@@ -25,6 +25,7 @@ class TemplateValueWriter(ValueWriter):
         self.cexpr_template = cexpr_template
 
     def write(self, context: ValueContext) -> str:
+        print(self.cexpr_template, context.value.regs)
         return self.cexpr_template.format(
             *(reg_aux.write(context.instr_context, reg) for reg in context.value.regs))
 
@@ -277,8 +278,9 @@ class DestroyInstWriter(InstrWriter):
 
 
 class NextWriter(InstrWriter):
-    def __init__(self):
+    def __init__(self, recursive):
         super(NextWriter, self).__init__()
+        self.recursive = recursive
 
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
@@ -287,12 +289,18 @@ class NextWriter(InstrWriter):
             context.block)
         next_entry = context.recurse_context.global_context.next_table[context.instr].block_id
         content = context.instr.args[0]
-        return (
-            f'current = {context.write_value(content)};\n' +
-            f'saved_target_{context.block.block_id} = ret_target;\n' +
-            f'ret_target = {context.block.block_id}; goto L{next_entry}; NI{context.block.block_id}_Ret:\n' +
-            f'ret_target = saved_target_{context.block.block_id};'
-        )
+        if not self.recursive:
+            return (
+                f'current = {context.write_value(content)};\n' +
+                f'saved_target_{context.block.block_id} = ret_target;\n' +
+                f'ret_target = {context.block.block_id}; goto L{next_entry}; NI{context.block.block_id}_Ret:\n' +
+                f'ret_target = saved_target_{context.block.block_id};'
+            )
+        else:
+            return (
+                f'current = {context.write_value(content)};\n' +
+                f'goto L{next_entry};'
+            )
 
 
 class ParseHeaderWriter(InstrWriter):

@@ -19,8 +19,8 @@ class TransDest:
 
     def compile_l(self, proto, env):
         return [
-            SetValue(env[proto.state], Value([], self.to_state)),
-            SetValue(env[proto.trans], Value([], self.trans_id)),
+            SetValue(proto.state.reveal(env), Value([], self.to_state)),
+            SetValue(proto.trans.reveal(env), Value([], self.trans_id)),
             *[action.compile(proto, env) for action in self.actions],
         ]
 
@@ -32,8 +32,8 @@ class TransMap:
 
     def compile(self, proto, env):
         return (
-            If(EqualTest(env[proto.trans], zero), [], [
-                If(EqualTest(env[proto.state], Value([], self.from_state)), [
+            If(EqualTest(proto.trans.reveal(env), zero), [], [
+                If(EqualTest(proto.state.reveal(env), Value([], self.from_state)), [
                     If(cond.compile(proto, env), dest.compile_l(proto, env))
                     for cond, dest in self.trans_map.items()
                 ])
@@ -48,19 +48,19 @@ class StateMachine:
 
     def compile_l(self, proto, env):
         return [
-            SetValue(env[proto.trans], zero),
+            SetValue(proto.trans.reveal(env), zero),
             *[
                 trans_map.compile(proto, env)
                 for trans_map in self.map_list
             ]
         ]
 
-    def compile_accept(self, proto, env):
+    def compile_accept(self, proto, env, next_codes):
         return (
-            If(AggValue([proto.state.compile(proto, env)], ' || '.join(f'{{0}} == {state}' for state in self.accept_set)), [
-                Command(instance, 'Destroy', [], opt_target=True,
-                        aux=InstrAux(DestroyInstWriter())),
-            ])
+            If(AggValue(
+                [proto.state.compile(proto, env)],
+                ' || '.join(f'{{0}} == {state}' for state in self.accept_set)
+            ), next_codes)
         )
 
 
@@ -69,7 +69,7 @@ class DataKey:
         self.regs = regs
 
     def get_aux_creator(self, proto, env):
-        return DataStructAuxCreator([env[reg] for reg in self.regs])
+        return DataStructAuxCreator([reg.reveal(env) for reg in self.regs])
 
     def get_key(self, proto, env):
         return AggValue([reg.compile(proto, env) for reg in self.regs])
@@ -82,29 +82,19 @@ class BiDataKey:
 
     def get_aux_creator(self, proto, env):
         return BiDataStructAuxCreator(
-            [env[reg] for reg in self.half_key1],
-            [env[reg] for reg in self.half_key2],
+            [reg.reveal(env) for reg in self.half_key1],
+            [reg.reveal(env) for reg in self.half_key2],
         )
 
     def get_key(self, proto, env):
         return AggValue([reg.compile(proto, env) for reg in self.half_key1 + self.half_key2])
 
 
-class SetupInst:
-    def __init__(self, key, data_regs, vexpr_map):
-        self.key = key
-        self.data_regs = data_regs
+class SetupVExpr:
+    def __init__(self, vexpr_map):
         self.vexpr_map = vexpr_map
         self.vexpr_regs = {name: RegProto(InstRegAux(1, ConstRaw(zero)))
                            for name in self.vexpr_map}
-
-    def alloc_create_inst_struct(self, proto, env, extra=None):
-        return Struct([
-            reg.alloc(env) for reg in [*(extra or []), *self.data_regs.values(), *self.vexpr_regs.values()]
-        ], self.key.get_aux_creator(proto, env))
-
-    def get(self, name):
-        return self.data_regs[name]
 
     def vexpr(self, name):
         return Expr([self.vexpr_regs[name], ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))], '{0} == 1 && {1} == 1')
@@ -112,8 +102,35 @@ class SetupInst:
     def zexpr(self, name):
         return Expr([self.vexpr_regs[name], ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))], '{0} == 0 || {1} == 0')
 
+    def compile_l(self, proto, env):
+        return [
+            If(cond.compile(proto, env), [
+                SetValue(self.vexpr_regs[vexpr_reg].reveal(env), one),
+            ])
+            for vexpr_reg, cond in self.vexpr_map.items()
+        ]
+
+
+class SetupInst:
+    def __init__(self, key, data_regs):
+        self.key = key
+        self.data_regs = data_regs
+
+    def alloc_create_inst_struct(self, proto, env, extra=None):
+        return Struct([
+            reg.alloc(env) for reg in [*(extra or []), *self.data_regs.values()]
+        ], self.key.get_aux_creator(proto, env))
+
+    def get(self, name):
+        return self.data_regs[name]
+
     def compile_l(self, proto, env, inst_struct):
         key = self.key.get_key(proto, env)
+        if isinstance(self.key, BiDataKey):
+            to_active = ([SetValue(proto.to_active.reveal(env), Value(
+                [instance], aux=ValueAux(ToActiveWriter())))], [SetValue(proto.to_active.reveal(env), zero)])
+        else:
+            to_active = ([], [])
         return [
             Command(instance, 'Prefetch', [
                     key], opt_target=True, aux=InstrAux(PrefetchInstWriter())),
@@ -125,8 +142,7 @@ class SetupInst:
                              aux=InstrAux(NoneWriter()))
                     for reg in inst_struct.regs
                 ],
-                # SetValue(env[proto.to_active], Value(
-                #     [instance], aux=ValueAux(ToActiveWriter()))),
+                *to_active[0],
             ], [
                 Command(
                     instance, 'Create', [key], opt_target=True, aux=InstrAux(CreateInstWriter())),
@@ -135,15 +151,9 @@ class SetupInst:
                         [Value([instance]), reg_aux[reg].init_value.compile(proto, env)], '{1}'))
                     for reg in inst_struct.regs
                 ],
-                # SetValue(env[proto.to_active], zero),
+                *to_active[1],
             ]),
             SetValue(sequence, Value([instance]), aux=InstrAux(NoneWriter())),
-            *[
-                If(cond.compile(proto, env), [
-                    SetValue(env[self.vexpr_regs[vexpr_reg]], one),
-                ])
-                for vexpr_reg, cond in self.vexpr_map.items()
-            ],
         ]
 
 
@@ -216,13 +226,6 @@ class Event:
         self.cond = cond
         self.actions = actions
 
-    # def compile(self, proto, env):
-    #     return (
-    #         If(self.cond.compile(proto, env), [
-    #            action.compile(proto, env) for action in self.actions
-    #            ])
-    #     )
-
 
 class Call:
     def __init__(self, name, regs):
@@ -230,7 +233,7 @@ class Call:
         self.regs = regs
 
     def compile(self, proto, env):
-        return Command(runtime, 'Call', [reg.compile(proto, env) for reg in self.regs], opt_target=True, aux=InstrAux(CallWriter(self.name, [env[reg] for reg in self.regs])))
+        return Command(runtime, 'Call', [reg.compile(proto, env) for reg in self.regs], opt_target=True, aux=InstrAux(CallWriter(self.name, [reg.reveal(env) for reg in self.regs])))
 
 
 class Events:
@@ -253,7 +256,7 @@ class Events:
                 self.event_regs[event].alloc(env)
 
         codes = [
-            SetValue(env[self.event_regs[evt]], zero)
+            SetValue(self.event_regs[evt].reveal(env), zero)
             for evt in self.event_map
         ]
         uncompiled_events = list(self.event_map)
@@ -263,14 +266,14 @@ class Events:
             uncompiled_events.remove(event)
             event_codes = (
                 If(self.event_map[event].cond.compile(proto, env), [
-                    SetValue(env[self.event_regs[event]], one),
+                    SetValue(self.event_regs[event].reveal(env), one),
                     *[
                         action.compile(proto, env) for action in self.event_map[event].actions
                     ]
                 ])
             )
             if event in self.trigger_map:
-                trigger_cond = Value([env[self.event_regs[evt]] for evt in self.trigger_map[event]], ' || '.join(
+                trigger_cond = Value([self.event_regs[evt].reveal(env) for evt in self.trigger_map[event]], ' || '.join(
                     f'{{{i}}}' for i in range(len(self.trigger_map[event]))))
                 event_codes = (
                     If(trigger_cond, [event_codes])
@@ -288,16 +291,34 @@ class RegProto:
         return env[self]
 
     def compile(self, proto, env):
-        return Value([env[self]], '{0}')
+        return Value([self.reveal(env)], '{0}')
+
+    def reveal(self, env):
+        return env[self]
+
+
+class ForeignRegProto(RegProto):
+    def __init__(self, reg_proto, env):
+        super().__init__(reg_proto.aux)
+        self.reg_proto = reg_proto
+        self.env = env
+
+    def reveal(self, env):
+        return self.reg_proto.reveal(self.env)
 
 
 class Expr:
-    def __init__(self, nodes, template):
+    def __init__(self, nodes, template, eval_template=None):
         self.nodes = nodes
         self.template = template
+        self.eval_template = eval_template or template
 
     def compile(self, proto, env):
-        return AggValue([node.compile(proto, env) for node in self.nodes], self.template)
+        return AggValue(
+            [node.compile(proto, env) for node in self.nodes],
+            self.eval_template,
+            ValueAux(TemplateValueWriter(self.template))
+        )
 
 
 class EqualExpr(Expr):
@@ -308,7 +329,7 @@ class EqualExpr(Expr):
 
     def compile(self, proto, env):
         # print(env)
-        return EqualTest(env[self.reg_proto], self.expr.compile(proto, env))
+        return EqualTest(self.reg_proto.reveal(env), self.expr.compile(proto, env))
 
 
 class Layout:
@@ -323,7 +344,7 @@ class Layout:
             reg.alloc(env)
             if reg.aux.byte_len is not None:
                 if reg.aux.bit_len is None:
-                    current.append(env[reg])
+                    current.append(reg.reveal(env))
                 else:
                     current_byte.append(reg)
                     total_bits = sum(
@@ -331,16 +352,16 @@ class Layout:
                     assert total_bits <= 8
                     if total_bits == 8:
                         current_byte.reverse()
-                        current.extend(env[reg] for reg in current_byte)
+                        current.extend(reg.reveal(env) for reg in current_byte)
                         current_byte = []
             else:
-                assert reg.aux.bit_len is None
+                assert isinstance(reg.aux, ByteSliceRegAux)
                 if current != []:
                     actions.append(LocateStruct(
                         Struct(current, HeaderStructAux.create)))
                     current = []
                 actions.append(ParseByteSlice(
-                    env[reg], reg.length_expr.compile(proto, env)))
+                    reg.reveal(env), reg.aux.length_expr.compile(proto, env)))
         if current != []:
             actions.append(LocateStruct(
                 Struct(current, HeaderStructAux.create)))
@@ -349,18 +370,30 @@ class Layout:
 
 
 class HeaderParser:
-    def __init__(self, actions, reg_map, env):
+    def __init__(self, actions, reg_map):
         self.actions = actions
         self.reg_map = reg_map
-        self.env = env
 
     @staticmethod
     def parse(proto, layout):
-        env = {}
-        return HeaderParser(layout.deconstruct(proto, env), layout.reg_map, env)
+        return HeaderParser(layout.deconstruct(proto, proto.env), layout.reg_map)
+
+    @staticmethod
+    def tagged(proto, cond, tag, layout_map):
+        action_map = {}
+        reg_map = {}
+        compiled_cond = cond.compile(proto, proto.env)
+        tag_reg = tag.alloc(proto.env)
+        for (tag_value, name), layout in layout_map.items():
+            action_map[tag_value] = layout.deconstruct(proto, proto.env)
+            reg_map.update({f'{name}.{reg_name}': reg for reg_name, reg in layout.reg_map.items()})
+        return HeaderParser([TaggedParseLoop(compiled_cond, tag_reg, action_map)], reg_map)
 
     def get(self, name):
         return self.reg_map[name]
+
+    def then(self, parser):
+        return HeaderParser(self.actions + parser.actions, {**self.reg_map, **parser.reg_map})
 
 
 class HeaderRegProto(RegProto):
@@ -368,7 +401,7 @@ class HeaderRegProto(RegProto):
         super().__init__(aux)
 
     def compile(self, proto, env):
-        return Value([header_parser, env[self]], '{1}')
+        return Value([header_parser, self.reveal(env)], '{1}')
 
 
 class Assign:
@@ -377,7 +410,21 @@ class Assign:
         self.expr = expr
 
     def compile(self, proto, env):
-        return SetValue(env[self.reg_proto], self.expr.compile(proto, env))
+        return SetValue(self.reg_proto.reveal(env), self.expr.compile(proto, env))
+
+
+class When:
+    def __init__(self, cond, yes_codes, no_codes):
+        self.cond = cond
+        self.yes_codes = yes_codes
+        self.no_codes = no_codes
+
+    def compile(self, proto, env):
+        return If(self.cond.compile(proto, env), [
+            instr.compile(proto, env) for instr in self.yes_codes
+        ], [
+            instr.compile(proto, env) for instr in self.no_codes
+        ])
 
 
 class ProtoCore:
@@ -389,13 +436,17 @@ class ProtoCore:
             Value([sequence], aux=ValueAux(SeqReadyWriter())))
         self.payload = ConstRaw(
             Value([header_parser], aux=ValueAux(PayloadWriter())))
+        self.parsed_length = ConstRaw(Value([header_parser], aux=ValueAux(ParsedLengthWriter())))
+        self.total_length = ConstRaw(Value([header_parser], aux=ValueAux(TotalLengthWriter())))
+        self.env = {}
 
 
 class Proto:
-    def __init__(self, core, parser, setup_inst=None, setup_auto=None, general=None, seq=None, state_machine=None, events=None):
+    def __init__(self, core, parser, setup_inst=None, setup_vexpr=None, setup_auto=None, general=None, seq=None, state_machine=None, events=None):
         self.core = core
         self.parser = parser
         self.setup_inst = setup_inst
+        self.setup_vexpr = setup_vexpr
         self.setup_auto = setup_auto
         self.general = general
         self.seq = seq
@@ -403,13 +454,17 @@ class Proto:
         self.events = events
 
     def alloc_bundle(self):
-        env = dict(self.parser.env)
+        env = dict(self.core.env)
         if self.setup_inst is not None:
             extra = []
             if self.state_machine is not None:
                 extra.append(self.core.state)
+            if self.setup_vexpr is not None:
+                extra.extend(self.setup_vexpr.vexpr_regs.values())
             inst_struct = self.setup_inst.alloc_create_inst_struct(
                 self.core, env, extra)
+            if isinstance(self.setup_inst.key, BiDataKey):
+                self.core.to_active.alloc(env)
         else:
             inst_struct = None
         if self.setup_auto is not None:
@@ -427,7 +482,7 @@ class AllocatedBundle:
         self.env = env
         self.inst_struct = inst_struct
 
-    def compile_bundle(self, next_map=None, recurse=False):
+    def compile_bundle(self, name, next_map=None):
         actions = self.proto.parser.actions
         env = self.env
         codes = [
@@ -435,7 +490,6 @@ class AllocatedBundle:
                     aux=InstrAux(ParseHeaderWriter())),
         ]
         if self.proto.setup_inst is not None:
-            # TODO: to_active
             codes += self.proto.setup_inst.compile_l(
                 self.proto.core, env, self.inst_struct)
         if self.proto.general is not None:
@@ -447,34 +501,53 @@ class AllocatedBundle:
             codes += [seq.compile(self.proto.core, env)]
         else:
             seq = None
+        if self.proto.setup_vexpr is not None:
+            codes += self.proto.setup_vexpr.compile_l(self.proto.core, env)
         if self.proto.state_machine is not None:
             codes += self.proto.state_machine.compile_l(self.proto.core, env)
         if self.proto.events is not None:
             codes += self.proto.events.compile_l(self.proto.core, env)
         nexti = {}
-        if not recurse:
-            if next_map is not None:
-                if self.proto.seq is not None and self.proto.seq.assembled:
-                    content = self.proto.seq.content()
-                else:
-                    content = self.proto.core.payload
-                for cond, followed in next_map.items():
-                    next_command = Command(runtime, 'Next', [content.compile(
-                        self.proto.core, env)], opt_target=True, aux=InstrAux(NextWriter()))
-                    nexti[next_command] = followed
-                    codes += [
-                        If(cond.compile(self.proto.core, env), [
-                            next_command,
-                        ])
+        next_codes = []
+        if next_map is not None:
+            if self.proto.seq is not None and self.proto.seq.assembled:
+                content = self.proto.seq.content()
+            else:
+                content = self.proto.core.payload
+            for cond, followed in next_map.items():
+                recursive = followed == name
+                next_command = Command(runtime, 'Next', [content.compile(
+                    self.proto.core, env)], opt_target=True, aux=InstrAux(NextWriter(recursive)))
+                nexti[next_command] = followed
+                next_branch = [
+                    If(cond.compile(self.proto.core, env), [
+                        next_command,
+                    ])
+                ]
+                if self.proto.setup_inst is not None:
+                    destroy_inst = [
+                        Command(instance, 'Destroy', [], opt_target=True,
+                                aux=InstrAux(DestroyInstWriter())),
                     ]
+                else:
+                    destroy_inst = []
+                if not recursive:
+                    next_codes += next_branch + destroy_inst
+                else:
+                    next_codes += destroy_inst + next_branch
             if self.proto.setup_inst is not None:
                 codes += [self.proto.state_machine.compile_accept(
-                    self.proto.core, env)]
+                    self.proto.core, env, next_codes)]
+            else:
+                codes += next_codes
         else:
             assert False
         return CompiledBundle(
             BasicBlock.from_codes(codes).optimize(Patterns(seq)),
             actions, self.inst_struct, seq, self.proto.seq.use_data if self.proto.seq is not None else False, nexti)
+
+    def insert(self, reg_proto):
+        return ForeignRegProto(reg_proto, self.env)
 
 
 class CompiledBundle:
