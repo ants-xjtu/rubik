@@ -147,8 +147,7 @@ class SetupInst:
                 Command(
                     instance, 'Create', [key], opt_target=True, aux=InstrAux(CreateInstWriter())),
                 *[
-                    SetValue(reg, AggValue(
-                        [Value([instance]), reg_aux[reg].init_value.compile(proto, env)], '{1}'))
+                    SetValue(reg, reg_aux[reg].init_value.compile(proto, env))
                     for reg in inst_struct.regs
                 ],
                 *to_active[1],
