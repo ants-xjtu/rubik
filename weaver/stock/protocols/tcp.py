@@ -175,8 +175,10 @@ def tcp(allocated_ip):
 
     seq = SeqProto(
         auto.get('h_seqnum'), proto.payload, False, auto.get('takeup'),
-        (auto.get('lwnd'), Expr(
-            [auto.get('lwnd'), auto.get('wndsize')], '{0} + {1}'))
+        (
+            auto.get('lwnd'), 
+            Expr([auto.get('lwnd'), auto.get('wndsize')], 'WV_SafeAdd32({0}, {1})')
+        )
     )
 
     t_null, t_hs1, t_hs2, t_hs3, t_est, t_wv1, t_wv2, t_wv23, t_wv3, t_wv4 = \

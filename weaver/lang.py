@@ -642,7 +642,7 @@ class AllocatedBundle:
                 else:
                     codes += destroy_inst
         return CompiledBundle(
-            BasicBlock.from_codes(codes),#.optimize(Patterns(seq)),
+            BasicBlock.from_codes(codes).optimize(Patterns(seq)),
             actions, self.inst_struct, seq,
             self.proto.seq.use_data if self.proto.seq is not None else False,
             nexti
