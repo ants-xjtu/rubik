@@ -96,6 +96,7 @@ class Choice(If):
         super().__init__(cond, yes, no)
 
     def __str__(self):
+        # print(self.cond)
         yes_str = '\n'.join(str(instr) for instr in self.yes)
         no_str = '\n'.join(str(instr) for instr in self.no)
         return f'Choice {self.cond} {make_block(yes_str)} Else {make_block(no_str)}'
@@ -253,6 +254,9 @@ class BasicBlock:
 
     @staticmethod
     def from_codes(codes: List[Instr]) -> BasicBlock:
+        # for instr in codes:
+        #     print(instr)
+        # print()
         scanned, _ = BasicBlock.scan_codes(codes)
         return BasicBlock(scanned)
 

@@ -38,11 +38,12 @@ reg_aux = RegTable()
 
 
 class RegAux:
-    def __init__(self, byte_len: int = None, abstract: bool = False):
+    def __init__(self, byte_len: int = None, abstract: bool = False, debug_name=None):
         if byte_len is not None:
             assert byte_len in {1, 2, 4, 8}
         self.byte_len = byte_len
         self.abstract = abstract
+        self.debug_name = debug_name or '<noname>'
 
     def type_decl(self) -> str:
         assert not self.abstract
@@ -232,3 +233,6 @@ class ValueAux:
 
     def write(self, context):
         return self.writer.write(context)
+
+    def write_debug(self, context):
+        return self.writer.write_debug(context)

@@ -72,10 +72,19 @@ def tcp(allocated_ip):
         'pas_lwnd': RegProto(InstRegAux(4, ConstRaw(zero))),
         'act_wscale': RegProto(InstRegAux(4, ConstRaw(zero))),
         'pas_wscale': RegProto(InstRegAux(4, ConstRaw(zero))),
-        'act_wndsize': RegProto(InstRegAux(4, ConstRaw(Value([], f'{1 << 32 - 1}')))),
-        'pas_wndsize': RegProto(InstRegAux(4, ConstRaw(Value([], f'{1 << 32 - 1}')))),
+        'act_wndsize': RegProto(InstRegAux(4, ConstRaw(Value([], f'{(1 << 32) - 1}')))),
+        'pas_wndsize': RegProto(InstRegAux(4, ConstRaw(Value([], f'{(1 << 32) - 1}')))),
         'fin_seqnum1': RegProto(InstRegAux(4, ConstRaw(zero))),
         'fin_seqnum2': RegProto(InstRegAux(4, ConstRaw(zero))),
+    })
+
+    auto = SetupAuto({
+        'h_seqnum': RegProto(RegAux(4)),
+        'h_acknum': RegProto(RegAux(4)),
+        'h_wndsize': RegProto(RegAux(2)),
+        'lwnd': RegProto(RegAux(4)),
+        'wndsize': RegProto(RegAux(4)),
+        'takeup': RegProto(RegAux(4)),
     })
 
     vdata = SetupVExpr({
@@ -83,29 +92,26 @@ def tcp(allocated_ip):
         'expr2': EqualExpr(parser.get('fin'), ConstRaw(one)),
         'expr3': Expr(
             [parser.get('ack'), parser.get('fin'), data.get(
-                'fin_seqnum1'), parser.get('acknum')],
+                'fin_seqnum1'), auto.get('h_acknum')],
             '{0} == 1 && {1} == 0 && {2} + 1 == {3}',
         ),
         'expr4': Expr(
             [parser.get('ack'), parser.get('fin'), data.get(
-                'fin_seqnum1'), parser.get('acknum')],
+                'fin_seqnum1'), auto.get('h_acknum')],
             '{0} == 1 && {1} == 1 && {2} + 1 == {3}',
         ),
         'expr5': Expr(
-            [parser.get('ack'), data.get('fin_seqnum2'), parser.get('acknum')],
+            [parser.get('ack'), data.get('fin_seqnum2'), auto.get('h_acknum')],
             '{0} == 1 && {1} + 1 == {2}',
         ),
-    })
-
-    auto = SetupAuto({
-        'lwnd': RegProto(RegAux(4)),
-        'wndsize': RegProto(RegAux(4)),
-        'takeup': RegProto(RegAux(4)),
     })
 
     s_hs0, s_hs1, s_hs2, s_est, s_wv1, s_wv2, s_wv3, s_end = tuple(range(8))
 
     general = [
+        Assign(auto.get('h_seqnum'), Expr([parser.get('seqnum')], 'WV_NToH32({0})')),
+        Assign(auto.get('h_acknum'), Expr([parser.get('acknum')], 'WV_NToH32({0})')),
+        Assign(auto.get('h_wndsize'), Expr([parser.get('wndsize')], 'WV_NToH16({0})')),
         When(Expr(
             [parser.get('syn'), parser.get('ack'), parser.get('fin')],
             '({0} == 1 && {1} == 0) || {2} == 1'
@@ -119,11 +125,11 @@ def tcp(allocated_ip):
             When(EqualExpr(proto.state, ConstRaw(Value([], str(s_est)))), [
                 Assign(
                     data.get('fin_seqnum1'),
-                    Expr([parser.get('seqnum'), proto.payload],
+                    Expr([auto.get('h_seqnum'), proto.payload],
                          '{0} + {1}.length')
                 )
             ], [
-                Assign(data.get('fin_seqnum2'), parser.get('seqnum')),
+                Assign(data.get('fin_seqnum2'), auto.get('h_seqnum')),
             ])
         ], [])
     ]
@@ -133,8 +139,8 @@ def tcp(allocated_ip):
             When(parser.contain('ws'), [
                 Assign(that_wscale, parser.get('ws.value')),
             ], []),
-            Assign(that_wndsize, parser.get('wndsize')),
-            Assign(that_lwnd, parser.get('seqnum')),
+            Assign(that_wndsize, auto.get('h_wndsize')),
+            Assign(that_lwnd, auto.get('h_seqnum')),
             Assign(auto.get('wndsize'), Expr(
                 [this_wndsize, this_wscale], '{0} << {1}')),
             Assign(auto.get('lwnd'), this_lwnd),
@@ -159,17 +165,17 @@ def tcp(allocated_ip):
     ]
 
     seq = SeqProto(
-        parser.get('seqnum'), proto.payload, False, auto.get('takeup'),
+        auto.get('h_seqnum'), proto.payload, False, auto.get('takeup'),
         (auto.get('lwnd'), Expr(
             [auto.get('lwnd'), auto.get('wndsize')], '{0} + {1}'))
     )
 
-    t_null, t_hs1, t_hs2, t_est0, t_hs3, t_est, t_wv1, t_wv2, t_wv23, t_wv3, t_wv4 = tuple(
-        x + 1 for x in range(11))
+    t_null, t_hs1, t_hs2, t_hs3, t_est, t_wv1, t_wv2, t_wv23, t_wv3, t_wv4 = \
+        tuple(x + 1 for x in range(10))
 
     def reset(from_state):
         return {
-            Expr([parser.get('rst')], '{0} == 1'): TransDest(11 + from_state, s_end, []),
+            Expr([parser.get('rst')], '{0} == 1'): TransDest(10 + from_state, s_end, []),
         }
 
     state_machine = StateMachine([
@@ -181,7 +187,7 @@ def tcp(allocated_ip):
             ): TransDest(t_hs1, s_hs1, []),
             Expr(
                 [parser.get('syn'), parser.get('ack')],
-                '{0} == 0 || {1} == 1'
+                '!({0} == 1 && {1} == 0)'
             ): TransDest(t_null, s_end, []),
         }),
         TransMap(s_hs1, {
@@ -194,7 +200,6 @@ def tcp(allocated_ip):
         TransMap(s_hs2, {
             **reset(s_hs2),
             vdata.vexpr('expr1'): TransDest(t_hs3, s_est, []),
-            vdata.zexpr('expr2'): TransDest(t_est0, s_hs2, []),
         }),
         TransMap(s_est, {
             **reset(s_est),
@@ -220,8 +225,8 @@ def tcp(allocated_ip):
     events = Events({
         'assemble': Event(Expr(
             [proto.trans],
-            f'{{0}} == {t_est0} || {{0}} == {t_est} || {{0}} == {t_wv1}',
-            f'{{0}} == {t_est0} or {{0}} == {t_est} or {{0}} == {t_wv1}',
+            f'{{0}} == {t_est} || {{0}} == {t_wv1}',
+            f'{{0}} == {t_est} or {{0}} == {t_wv1}',
         ), [
             seq.assemble(),
         ])

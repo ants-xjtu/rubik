@@ -236,6 +236,7 @@ class BlockRecurseContext:
         self.global_context.append_text(text + make_block(codes_text))
 
     def execute_all(self):
+        # print(self.entry_block)
         for block in self.entry_block.recurse():
             self.execute_block(block)
 
@@ -267,8 +268,8 @@ class InstrContext:
     def write_instr(self, instr: Instr) -> str:
         return InstrContext(self.recurse_context, self.block, instr).write()
 
-    def write_value(self, value: Value) -> str:
-        return ValueContext(self, value).write()
+    def write_value(self, value: Value, debug=False) -> str:
+        return ValueContext(self, value).write(debug)
 
 
 class ValueContext:
@@ -276,8 +277,11 @@ class ValueContext:
         self.instr_context = instr_context
         self.value = value
 
-    def write(self) -> str:
-        return (self.value.aux or ValueWriter()).write(self)
+    def write(self, debug=False) -> str:
+        if not debug:
+            return (self.value.aux or ValueWriter()).write(self)
+        else:
+            return (self.value.aux or ValueWriter()).write_debug(self)
 
-    def write_value(self, value: Value) -> str:
-        return ValueContext(self.instr_context, value).write()
+    def write_value(self, value: Value, debug=False) -> str:
+        return ValueContext(self.instr_context, value).write(debug)

@@ -19,15 +19,27 @@ class ValueWriter:
         else:
             return TemplateValueWriter(context.value.eval_template).write(context)
 
+    def write_debug(self, context):
+        if isinstance(context.value, AggValue):
+            return AggValueWriter(context.value.agg_eval).write_debug(context)
+        else:
+            return TemplateValueWriter(context.value.eval_template).write_debug(context)
+
 
 class TemplateValueWriter(ValueWriter):
     def __init__(self, cexpr_template: str):
         self.cexpr_template = cexpr_template
 
     def write(self, context: ValueContext) -> str:
-        # print(self.cexpr_template, context.value.regs)
+        # print(repr(self.cexpr_template), context.value)
         return self.cexpr_template.format(
-            *(reg_aux.write(context.instr_context, reg) for reg in context.value.regs))
+            *(reg_aux.write(context.instr_context, reg) for reg in context.value.regs)
+        )
+
+    def write_debug(self, context: ValueContext):
+        return self.cexpr_template.format(
+            *(reg_aux[reg].debug_name for reg in context.value.regs)
+        )
 
 
 class AggValueWriter(ValueWriter):
@@ -37,8 +49,17 @@ class AggValueWriter(ValueWriter):
 
     def write(self, context: ValueContext) -> str:
         assert isinstance(context.value, AggValue)
-        values_text = ('(' + context.write_value(value) +
-                       ')' for value in context.value.values)
+        values_text = (
+            '(' + context.write_value(value) + ')'
+            for value in context.value.values
+        )
+        return self.cexpr_template.format(*values_text)
+
+    def write_debug(self, context: ValueContext) -> str:
+        values_text = (
+            '(' + context.write_value(value, debug=True) + ')'
+            for value in context.value.values
+        )
         return self.cexpr_template.format(*values_text)
 
 
@@ -46,17 +67,25 @@ class InstrWriter:
     # fallback
     def write(self, context: InstrContext) -> str:
         if isinstance(context.instr, If):
-            text = f'if ({context.write_value(context.instr.cond)}) '
-            text += make_block('\n'.join(context.write_instr(instr)
-                                         for instr in context.instr.yes))
-            text += ' else '
-            text += make_block('\n'.join(context.write_instr(instr)
-                                         for instr in context.instr.no))
-            return text
+            text = f'if ({context.write_value(context.instr.cond)}) ' + make_block('\n'.join(
+                context.write_instr(instr) for instr in context.instr.yes)
+            ) + ' else ' + make_block('\n'.join(
+                context.write_instr(instr) for instr in context.instr.no)
+            )
+            debug_text = f'// {context.write_value(context.instr.cond, debug=True)}\n'
+            return debug_text + text
         elif isinstance(context.instr, SetValue):
             assert not isinstance(context.instr, Command)
-            text = f'{reg_aux.write(context, context.instr.reg)} = ({reg_aux[context.instr.reg].type_decl()})({context.write_value(context.instr.value)});'
-            return text
+            text = (
+                f'{reg_aux.write(context, context.instr.reg)} = '
+                f'({reg_aux[context.instr.reg].type_decl()})' 
+                f'({context.write_value(context.instr.value)});'
+            )
+            debug_text = (
+                f'// {reg_aux[context.instr.reg].debug_name} = '
+                f'{context.write_value(context.instr.value, debug=True)}\n'
+            )
+            return debug_text + text
         else:
             assert False, 'should call `write` on subclasses'
 
