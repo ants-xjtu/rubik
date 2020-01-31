@@ -383,6 +383,8 @@ class EqualExpr(Expr):
 
     def compile(self, proto, env):
         # print(env)
+        if isinstance(self.reg_proto, HeaderRegProto):
+            return super().compile(proto, env)
         return EqualTest(self.reg_proto.reveal(env), self.expr.compile(proto, env))
 
 
@@ -464,6 +466,7 @@ class HeaderParser:
         ], parser.reg_map, parser.struct_map)
 
     def get(self, name):
+        # print(name)
         return self.reg_map[name]
 
     def then(self, parser):
@@ -482,6 +485,7 @@ class HeaderRegProto(RegProto):
         super().__init__(aux)
 
     def compile(self, proto, env):
+        # print(self.aux.debug_name)
         return Value([header_parser, self.reveal(env)], '{1}')
 
 
@@ -601,6 +605,7 @@ class AllocatedBundle:
             else:
                 content = self.proto.core.payload
             for cond, followed in next_map.items():
+                # print(cond)
                 recursive = followed == name
                 next_command = Command(
                     runtime, 'Next', [content.compile(self.proto.core, env)],
