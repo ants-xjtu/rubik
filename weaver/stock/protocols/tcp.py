@@ -31,35 +31,38 @@ def tcp(allocated_ip):
         'urgptr': HeaderRegProto(StructRegAux(2)),
     }))
 
-    parser = parser_core.then(HeaderParser.tagged(
-        proto,
-        Expr([proto.parsed_length, proto.total_length, parser_core.get(
-            'hdrlen')], '{0} < ({2} << 2) && {0} < {1}'),
-        HeaderRegProto(RegAux(1)), {
-            (0, 'eol'): Layout({}),
-            (1, 'nop'): Layout({}),
-            (2, 'mss'): Layout({
-                'length': HeaderRegProto(StructRegAux(1)),
-                'value': HeaderRegProto(StructRegAux(1)),
-            }),
-            (3, 'ws'): ws,
-            (4, 'sackperm'): Layout({
-                'length': HeaderRegProto(StructRegAux(1)),
-            }),
-            (8, 'ts'): Layout({
-                'length': HeaderRegProto(StructRegAux(1)),
-                'value': HeaderRegProto(StructRegAux(4)),
-                'echo_reply': HeaderRegProto(StructRegAux(4)),
-            }),
-            (12, 'ccnew'): Layout({
-                'length': HeaderRegProto(StructRegAux(1)),
-                'value': HeaderRegProto(StructRegAux(4)),
-            }),
-            (None, '_'): Layout({
-                'length': fallback_length,
-                'value': HeaderRegProto(ByteSliceRegAux(Expr([fallback_length], '({0} - 2) << 3'))),
-            }),
-        }))
+    option_cond = Expr([
+        proto.parsed, proto.total, parser_core.get('hdrlen')
+    ], '{0}.length < ({2} << 2) && {0}.length < {1}.length')
+    parser = parser_core.then(HeaderParser.when(
+        proto, option_cond,
+        HeaderParser.tagged(
+            proto, option_cond,
+            HeaderRegProto(RegAux(1)), {
+                (0, 'eol'): Layout({}),
+                (1, 'nop'): Layout({}),
+                (2, 'mss'): Layout({
+                    'length': HeaderRegProto(StructRegAux(1)),
+                    'value': HeaderRegProto(StructRegAux(1)),
+                }),
+                (3, 'ws'): ws,
+                (4, 'sackperm'): Layout({
+                    'length': HeaderRegProto(StructRegAux(1)),
+                }),
+                (8, 'ts'): Layout({
+                    'length': HeaderRegProto(StructRegAux(1)),
+                    'value': HeaderRegProto(StructRegAux(4)),
+                    'echo_reply': HeaderRegProto(StructRegAux(4)),
+                }),
+                (12, 'ccnew'): Layout({
+                    'length': HeaderRegProto(StructRegAux(1)),
+                    'value': HeaderRegProto(StructRegAux(4)),
+                }),
+                (None, '_'): Layout({
+                    'length': fallback_length,
+                    'value': HeaderRegProto(ByteSliceRegAux(Expr([fallback_length], '({0} - 2) << 3'))),
+                }),
+            })))
 
     data = SetupInst(BiDataKey([
         allocated_ip.insert(allocated_ip.proto.parser.get('srcip')),
@@ -176,13 +179,14 @@ def tcp(allocated_ip):
     seq = SeqProto(
         auto.get('h_seqnum'), proto.payload, False, auto.get('takeup'),
         (
-            auto.get('lwnd'), 
-            Expr([auto.get('lwnd'), auto.get('wndsize')], 'WV_SafeAdd32({0}, {1})')
+            auto.get('lwnd'),
+            Expr([auto.get('lwnd'), auto.get('wndsize')],
+                 'WV_SafeAdd32({0}, {1})')
         )
     )
 
-    t_null, t_hs1, t_hs2, t_hs3, t_est, t_wv1, t_wv2, t_wv23, t_wv3, t_wv4 = \
-        tuple(x + 1 for x in range(10))
+    t_null, t_hs1, t_hs2, t_hs3, t_est, t_wv1, t_wv2, t_wv23, t_wv3, t_wv4 = tuple(
+        x + 1 for x in range(10))
 
     def reset(from_state):
         return {

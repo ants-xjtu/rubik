@@ -78,7 +78,7 @@ class InstrWriter:
             assert not isinstance(context.instr, Command)
             text = (
                 f'{reg_aux.write(context, context.instr.reg)} = '
-                f'({reg_aux[context.instr.reg].type_decl()})' 
+                f'({reg_aux[context.instr.reg].type_decl()})'
                 f'({context.write_value(context.instr.value)});'
             )
             debug_text = (
@@ -359,7 +359,7 @@ class ParseHeaderWriter(InstrWriter):
             elif isinstance(action, TaggedParseLoop):
                 assert reg_aux[action.tag].byte_len == 1  # no ntoh issue
                 tag_text = reg_aux.write(context, action.tag)
-                lines.append(f'while ({context.write_value(action.cond)}) ' + make_block('\n'.join([
+                lines.append('do ' + make_block('\n'.join([
                     f'{tag_text} = (({reg_aux[action.tag].type_decl()} *)current.cursor)[0];',
                     f'current = WV_SliceAfter(current, {reg_aux[action.tag].byte_len});',
                     f'switch ({tag_text}) ' + make_block('\n'.join(
@@ -368,7 +368,9 @@ class ParseHeaderWriter(InstrWriter):
                             actions, context) + '\ncontinue;')
                         for match, actions in action.action_map.items()
                     )),
-                ])))
+                ])) + f' while ({context.write_value(action.cond)});')
+            elif isinstance(action, OptionalActions):
+                lines.append(f'if ({context.write_value(action.cond)}) ' + make_block(self.write_actions(action.actions, context)))
             else:
                 assert False
         return '\n'.join(lines)
@@ -377,13 +379,13 @@ class ParseHeaderWriter(InstrWriter):
 class CallWriter(InstrWriter):
     def __init__(self, name: str, regs: List[Reg] = None):
         super(CallWriter, self).__init__()
-        self.name = name
-        self.regs = regs or []
+        self.name=name
+        self.regs=regs or []
 
     def write(self, context: InstrContext) -> str:
         assert isinstance(context.instr, Command)
         assert context.instr.provider == runtime
-        context.recurse_context.global_context.required_calls[self.name] = self.regs
+        context.recurse_context.global_context.required_calls[self.name]=self.regs
         return f'{self.name}({", ".join(reg_aux.write(context, reg) for reg in self.regs)});'
 
 
@@ -397,11 +399,11 @@ class PayloadLengthWriter(ValueWriter):
         return 'current.length'
 
 
-class ParsedLengthWriter(ValueWriter):
+class ParsedWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return 'current.cursor - saved.cursor'
+        return 'WV_SliceBefore(saved, saved.length - current.length)'
 
 
-class TotalLengthWriter(ValueWriter):
+class TotalWriter(ValueWriter):
     def write(self, context: ValueContext) -> str:
-        return 'saved.length'
+        return 'saved'

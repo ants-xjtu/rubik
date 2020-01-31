@@ -1,8 +1,7 @@
-from weaver.stock.stacks.tcp_ip import stack, stack_map, stack_entry
+from weaver.stock.stacks.gtp import stack, stack_map, stack_entry
 from weaver.lang import Event, EqualExpr, ConstRaw, Call, RegProto
 from weaver.code import Value
 from weaver.auxiliary import RegAux
-
 
 stack['tcp'].proto.events.event_map['exam'] = Event(
     ConstRaw(Value([], '1')), [

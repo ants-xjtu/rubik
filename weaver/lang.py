@@ -262,11 +262,12 @@ class Call:
         ] + [
             Command(
                 runtime, 'Call', [
-                    reg.compile(proto, env) 
+                    reg.compile(proto, env)
                     for reg in self.arg_map
                 ],
                 opt_target=True, aux=InstrAux(
-                    CallWriter(self.name, [reg.reveal(env) for reg in self.arg_map])
+                    CallWriter(self.name, [reg.reveal(env)
+                                           for reg in self.arg_map])
                 )
             )
         ]
@@ -346,6 +347,7 @@ class RegProto:
         return Value([self.reveal(env)], '{0}')
 
     def reveal(self, env):
+        # print(self.aux.debug_name)
         return env[self]
 
 
@@ -443,7 +445,6 @@ class HeaderParser:
         action_map = {}
         reg_map = {}
         struct_map = {}
-        compiled_cond = cond.compile(proto, proto.env)
         tag_reg = tag.alloc(proto.env, '<layout tag>')
         for (tag_value, name), layout in layout_map.items():
             action_map[tag_value] = layout.deconstruct(proto, proto.env)
@@ -453,7 +454,14 @@ class HeaderParser:
             reg_map.update({
                 f'{name}.{reg_name}': reg for reg_name, reg in layout.reg_map.items()
             })
+        compiled_cond = cond.compile(proto, proto.env)
         return HeaderParser([TaggedParseLoop(compiled_cond, tag_reg, action_map)], reg_map, struct_map)
+
+    @staticmethod
+    def when(proto, cond, parser):
+        return HeaderParser([
+            OptionalActions(cond.compile(proto, proto.env), parser.actions)
+        ], parser.reg_map, parser.struct_map)
 
     def get(self, name):
         return self.reg_map[name]
@@ -509,10 +517,10 @@ class ProtoCore:
             Value([sequence], aux=ValueAux(SeqReadyWriter())))
         self.payload = ConstRaw(
             Value([header_parser], aux=ValueAux(PayloadWriter())))
-        self.parsed_length = ConstRaw(
-            Value([header_parser], aux=ValueAux(ParsedLengthWriter())))
-        self.total_length = ConstRaw(
-            Value([header_parser], aux=ValueAux(TotalLengthWriter())))
+        self.parsed = ConstRaw(
+            Value([header_parser], aux=ValueAux(ParsedWriter())))
+        self.total = ConstRaw(
+            Value([header_parser], aux=ValueAux(TotalWriter())))
         self.env = {}
 
 
@@ -526,7 +534,7 @@ class Proto:
         self.general = general
         self.seq = seq
         self.state_machine = state_machine
-        self.events = events
+        self.events = events or Events({}, {}, {})
 
     def alloc_bundle(self):
         env = dict(self.core.env)

@@ -1,6 +1,4 @@
-from weaver.stock.protocols.ip import ip
-from weaver.stock.protocols.eth import eth
-from weaver.stock.protocols.tcp import tcp
+from weaver.stock.protocols import ip, eth, tcp
 from weaver.writer_context import GlobalContext
 from weaver.lang import EqualExpr, ConstRaw
 from weaver.code import Value
