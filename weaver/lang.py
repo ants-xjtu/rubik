@@ -97,10 +97,24 @@ class SetupVExpr:
                            for name in self.vexpr_map}
 
     def vexpr(self, name):
-        return Expr([self.vexpr_regs[name], ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))], '{0} == 1 && {1} == 1')
+        return Expr(
+            [
+                self.vexpr_regs[name], 
+                self.vexpr_map[name],
+                ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))
+            ], 
+            'WV_UpdateV(&{0}, {1}) == 1 && {2} == 1'
+        )
 
     def zexpr(self, name):
-        return Expr([self.vexpr_regs[name], ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))], '{0} == 0 || {1} == 0')
+        return Expr(
+            [
+                self.vexpr_regs[name], 
+                self.vexpr_map[name],
+                ConstRaw(Value([sequence], aux=ValueAux(SeqReadyWriter())))
+            ], 
+            '!(WV_UpdateV(&{0}, {1}) == 1 && {2} == 1)'
+        )
 
     def compile_l(self, proto, env):
         return [
@@ -591,8 +605,8 @@ class AllocatedBundle:
             codes += [seq.compile(self.proto.core, env)]
         else:
             seq = None
-        if self.proto.setup_vexpr is not None:
-            codes += self.proto.setup_vexpr.compile_l(self.proto.core, env)
+        # if self.proto.setup_vexpr is not None:
+        #     codes += self.proto.setup_vexpr.compile_l(self.proto.core, env)
         if self.proto.state_machine is not None:
             codes += self.proto.state_machine.compile_l(self.proto.core, env)
         if self.proto.events is not None:

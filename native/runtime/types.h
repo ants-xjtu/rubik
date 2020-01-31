@@ -65,4 +65,11 @@ static inline WV_ByteSlice WV_SliceBefore(WV_ByteSlice slice, WV_U32 index)
     return (WV_ByteSlice){ .cursor = slice.cursor, .length = index };
 }
 
+static inline WV_U8 WV_UpdateV(WV_U8 *v, WV_U8 expr) {
+    if (expr) {
+        *v = 1;
+    }
+    return *v;
+}
+
 #endif
