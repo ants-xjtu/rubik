@@ -5,8 +5,10 @@
 First, run
 
 ```
-$ make gen
+$ make gen C=<config>
 ```
+
+Set `<config>` to python module (**not** python file) you expect to generate from. Defaults to `stack_conf`, which reads `stack_conf.py` from project root. You can set it to `weaver.stock.stacks.tcp_ip` to use stock protocol stacks.
 
 Two files named `weaver_blackbox.c` and `weaver_whitebox.template.c` will be generated. 
 
@@ -56,6 +58,8 @@ on each of the incoming packets.
 Type Ctrl-C to exit.
 
 ----
+
+**UPDATE REQUIRED FOR FOLLOWING CONTENT.**
 
 The `weaver` folder contains a Python module, with following files:
 * `code.py` definitions of `Instr` (and its subclasses), `Value` (and its subclasses) and 
