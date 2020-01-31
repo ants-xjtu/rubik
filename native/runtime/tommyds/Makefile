@@ -26,21 +26,21 @@ ifeq ($(UNAME),Linux)
 LIB=-lrt
 BENCHLIB=benchmark/lib/judy/libJudyL.a benchmark/lib/judy/libJudyMalloc.a
 EXE=
-O=.o
+OX=.o
 endif
 
 # Darwin
 ifeq ($(UNAME),Darwin)
 LIB=
 EXE=
-O=.o
+OX=.o
 endif
 
 # Windows
 ifeq ($(UNAME),)
 BENCHLIB=benchmark/lib/judy/src/judy.lib
 EXE=.exe
-O=.obj
+OX=.obj
 endif
 
 #CHECK = ./tommybench -n 1000000 -d tommy-hashlin
@@ -84,12 +84,12 @@ all: tommycheck$(EXE)
 
 bench: tommybench$(EXE)
 
-tommy$(O): $(DEP)
-	$(CC) $(CFLAGS) -c tommyds/tommy.c -o tommy$(O)
-	-$(OBJDUMP) -S tommy$(O) > tommy.s
+tommy$(OX): $(DEP)
+	$(CC) $(CFLAGS) -c tommyds/tommy.c -o tommy$(OX)
+	-$(OBJDUMP) -S tommy$(OX) > tommy.s
 
-tommycheck$(EXE): check.c tommy$(O)
-	$(CC) $(CFLAGS) check.c tommy$(O) -o tommycheck$(EXE) $(LIB)
+tommycheck$(EXE): check.c tommy$(OX)
+	$(CC) $(CFLAGS) check.c tommy$(OX) -o tommycheck$(EXE) $(LIB)
 
 tommybench$(EXE): benchmark.cc $(DEP)
 	$(CXX) $(BENCHCXXFLAGS) benchmark.cc -o tommybench$(EXE) $(LIB) $(BENCHLIB)

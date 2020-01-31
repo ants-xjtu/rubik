@@ -20,13 +20,40 @@ Run
 $ make T=<target> A=<whitebox>
 ```
 
-Set `<target>` to driver you wish to use (currently support: `pcap`), and `<whitebox>` to path to your 
-edited code (defaults to `weaver_whitebox.c`).
+Set `<target>` to driver you wish to use (currently support: `pcap` and `dpdk`), and `<whitebox>` to path
+to your edited code (defaults to `weaver_whitebox.c`).
+
+For `dpdk` driver, make sure you have a compiled DPDK library and specified `RTE_SDK` envrionment 
+variable before compilation.
 
 An executable named `procpkts` will be built.
 
 With `pcap` driver, run `procpkts` with pcap file name as argument. The packets in pcap file will be 
-replayed forever, and throughput will be printed periodically. Type Ctrl-C to exit.
+replayed forever, and throughput will be printed periodically. 
+
+```
+$ ./procpkts <pcap file>
+```
+
+Type Ctrl-C to exit.
+
+With `dpdk` driver, run `procpkts` with the proper permission (as `root` or with `sudo`).
+The execution command is as follows.
+
+```
+$ ./procpkts -l <L> -n <N> --proc-type=auto -- -p <P> --num-procs=<NP> --proc-id=<PID>
+```
+
+* `L` the lcore id, starting from 1
+* `N` num of cores, should equal to NP
+* `P` the mask of ports, e.g., 0x3 (0b11) for port 0 and 1
+* `NP` num of cores, should equal to `N`
+* `PID` the id of the process, starting from 0
+
+The program will behave as a simple forwarding switch between the ports involved, and run the stack
+on each of the incoming packets.
+
+Type Ctrl-C to exit.
 
 ----
 
