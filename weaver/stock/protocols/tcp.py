@@ -109,9 +109,12 @@ def tcp(allocated_ip):
     s_hs0, s_hs1, s_hs2, s_est, s_wv1, s_wv2, s_wv3, s_end = tuple(range(8))
 
     general = [
-        Assign(auto.get('h_seqnum'), Expr([parser.get('seqnum')], 'WV_NToH32({0})')),
-        Assign(auto.get('h_acknum'), Expr([parser.get('acknum')], 'WV_NToH32({0})')),
-        Assign(auto.get('h_wndsize'), Expr([parser.get('wndsize')], 'WV_NToH16({0})')),
+        Assign(auto.get('h_seqnum'), Expr(
+            [parser.get('seqnum')], 'WV_NToH32({0})')),
+        Assign(auto.get('h_acknum'), Expr(
+            [parser.get('acknum')], 'WV_NToH32({0})')),
+        Assign(auto.get('h_wndsize'), Expr(
+            [parser.get('wndsize')], 'WV_NToH16({0})')),
         When(Expr(
             [parser.get('syn'), parser.get('ack'), parser.get('fin')],
             '({0} == 1 && {1} == 0) || {2} == 1'
@@ -139,8 +142,10 @@ def tcp(allocated_ip):
             When(parser.contain('ws'), [
                 Assign(that_wscale, parser.get('ws.value')),
             ], []),
-            Assign(that_wndsize, auto.get('h_wndsize')),
-            Assign(that_lwnd, auto.get('h_seqnum')),
+            When(EqualExpr(parser.get('ack'), ConstRaw(one)), [
+                Assign(that_wndsize, auto.get('h_wndsize')),
+                Assign(that_lwnd, auto.get('h_acknum')),
+            ], []),
             Assign(auto.get('wndsize'), Expr(
                 [this_wndsize, this_wscale], '{0} << {1}')),
             Assign(auto.get('lwnd'), this_lwnd),
@@ -150,17 +155,21 @@ def tcp(allocated_ip):
         When(
             proto.to_active,
             update_wnd(
-                data.get('pas_lwnd'), data.get(
-                    'pas_wscale'), data.get('pas_wndsize'),
-                data.get('act_lwnd'), data.get(
-                    'act_wscale'), data.get('act_wndsize'),
+                data.get('pas_lwnd'),
+                data.get('pas_wscale'),
+                data.get('pas_wndsize'),
+                data.get('act_lwnd'),
+                data.get('act_wscale'),
+                data.get('act_wndsize'),
             ),
             update_wnd(
-                data.get('act_lwnd'), data.get(
-                    'act_wscale'), data.get('act_wndsize'),
-                data.get('pas_lwnd'), data.get(
-                    'pas_wscale'), data.get('pas_wndsize'),
-            )
+                data.get('act_lwnd'),
+                data.get('act_wscale'),
+                data.get('act_wndsize'),
+                data.get('pas_lwnd'),
+                data.get('pas_wscale'),
+                data.get('pas_wndsize'),
+            ),
         )
     ]
 

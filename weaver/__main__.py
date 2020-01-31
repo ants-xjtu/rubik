@@ -14,12 +14,12 @@ for name, allocated_bundle in stack.items():
     compiled[name] = allocated_bundle.compile_bundle(name, stack_map.get(name, None))
     compiled[name].register_nexti(nexti_map)
 
-# context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})
-# for bundle in compiled.values():
-#     bundle.execute_in(context)
-# context.execute_all()
+context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})
+for bundle in compiled.values():
+    bundle.execute_in(context)
+context.execute_all()
 
-# print('/* Weaver Whitebox Code Template */')
-# print(context.write_template())
-# print('/* Weaver Auto-generated Blackbox Code */')
-# print(context.write_all(compiled[stack_entry].recurse))
+print('/* Weaver Whitebox Code Template */')
+print(context.write_template())
+print('/* Weaver Auto-generated Blackbox Code */')
+print(context.write_all(compiled[stack_entry].recurse))

@@ -249,12 +249,28 @@ class Event:
 
 
 class Call:
-    def __init__(self, name, regs):
+    def __init__(self, name, arg_map):
         self.name = name
-        self.regs = regs
+        self.arg_map = arg_map
 
     def compile(self, proto, env):
-        return Command(runtime, 'Call', [reg.compile(proto, env) for reg in self.regs], opt_target=True, aux=InstrAux(CallWriter(self.name, [reg.reveal(env) for reg in self.regs])))
+        for reg in self.arg_map:
+            reg.alloc(env, '<arg>')
+        codes = [
+            SetValue(reg.reveal(env), expr.compile(proto, env))
+            for reg, expr in self.arg_map.items()
+        ] + [
+            Command(
+                runtime, 'Call', [
+                    reg.compile(proto, env) 
+                    for reg in self.arg_map
+                ],
+                opt_target=True, aux=InstrAux(
+                    CallWriter(self.name, [reg.reveal(env) for reg in self.arg_map])
+                )
+            )
+        ]
+        return If(one, codes)
 
 
 class Events:
@@ -626,7 +642,7 @@ class AllocatedBundle:
                 else:
                     codes += destroy_inst
         return CompiledBundle(
-            BasicBlock.from_codes(codes).optimize(Patterns(seq)),
+            BasicBlock.from_codes(codes),#.optimize(Patterns(seq)),
             actions, self.inst_struct, seq,
             self.proto.seq.use_data if self.proto.seq is not None else False,
             nexti
