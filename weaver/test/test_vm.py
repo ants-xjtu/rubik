@@ -1,29 +1,29 @@
-from weaver.code import *
-from weaver.vm import *
+import pytest
+from weaver.vm import (
+    RegStore, Reg, Unsigned, EvalEnv, NotConstant, ConstUnsigned, ConstBool,
+    UnsignedRegAssertFork
+)
 
 
-def test_execute():
-    vm = Runtime()
-    vm.set_value(1000, 0)
-    vm.execute(BasicBlock.from_codes([
-        SetValue(1001, Value([1000], '{0} + 1')),
-    ]))
-    assert vm.env[1001] == 1
+def test_vm_conceptually():
+    store = RegStore({
+        Reg(0): Unsigned(2),
+        Reg(1): Unsigned(2),
+    })
+    env = EvalEnv()
+    with pytest.raises(NotConstant):
+        store.get_reg(Reg(0)).load().evaluate(env)
 
+    env.set_reg(Reg(0), Unsigned(2).const(2020))
+    load_val = store.get_reg(Reg(0)).load().evaluate(env)
+    assert isinstance(load_val, ConstUnsigned)
+    assert load_val.value == 2020
 
-def test_execute_command():
-    class Parser(CommandExecutor):
-        def execute(self, command: str, args: List[Any], runtime: Runtime):
-            if command == 'Parse':
-                assert args == []
-                runtime.set_value(1000, 0)
-            else:
-                assert False, f'unknown command {command}'
+    equal_val = store.get_reg(Reg(0)).equals_to(Unsigned(2).const(2020)).evaluate(env)
+    assert isinstance(equal_val, ConstBool)
+    assert equal_val.value
 
-    vm = Runtime()
-    vm.register(0, Parser())
-    vm.execute(BasicBlock.from_codes([
-        Command(0, 'Parse', []),
-        SetValue(1001, Value([1000], '{0} + 1')),
-    ]))
-    assert vm.env[1001] == 1
+    fork = UnsignedRegAssertFork(store.get_reg(Reg(1)).is_one())
+    fork.asserted(env)
+    assert isinstance(env.get_reg(Reg(1)), ConstUnsigned)
+    assert env.get_reg(Reg(1)).value == 1
