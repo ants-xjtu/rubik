@@ -63,6 +63,7 @@ int main(int argc, char *argv[]) {
     PcapUser user = { .runtime = runtime, .pcap = pcap_packets };
 
     signal(SIGINT, ctrl_c_handler);
+    WV_Setup();
     WV_ProfileStart(WV_GetProfile(runtime));
     for (;;) {
         pcap_loop(pcap_packets, -1, proc, (void *)&user);

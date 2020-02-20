@@ -16,4 +16,8 @@ WV_U8 WV_FreeRuntime(WV_Runtime *);
 WV_Profile *WV_GetProfile(WV_Runtime *);
 // blackbox implemented end
 
+// implemented by whitebox
+WV_U8 WV_Setup();
+// whitebox implemented end
+
 #endif
