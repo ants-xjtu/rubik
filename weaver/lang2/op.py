@@ -81,6 +81,12 @@ class SliceLength(NumberOpMixin):
         self.expr = Constant.wrap(expr)
 
 
+class VExpr(NumberOpMixin):
+    def __init__(self, var, expr):
+        self.var = var
+        self.expr = expr
+
+
 class Constant(VariableOpMixin):
     def __init__(self, value):
         self.value = value
@@ -105,18 +111,34 @@ class Total(SliceOpMixin):
     pass
 
 
-class Assign:
+class StatOpMixin:
+    def __add__(self, other):
+        return Action([self, other])
+
+
+class Assign(StatOpMixin):
     def __init__(self, var, expr):
         self.var = var
         self.expr = Constant.wrap(expr)
 
 
-class When:
-    def __init__(self, pred, yes_actions, no_actions):
+class When(StatOpMixin):
+    def __init__(self, pred, yes_action, no_action):
         self.pred = Constant.wrap(pred)
-        self.yes_actions = yes_actions
-        self.no_actions = no_actions
+        self.yes_action = yes_action
+        self.no_action = no_action
 
 
-class Assemble:
+class Assemble(StatOpMixin):
     pass
+
+
+class Action:
+    def __init__(self, stats):
+        self.stats = stats
+
+    def __add__(self, other):
+        if isinstance(other, Action):
+            return Action(self.stats + other.stats)
+        else:
+            return Action(self.stats + [other])

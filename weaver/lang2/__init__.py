@@ -1,4 +1,4 @@
-from weaver.lang2.op import VariableOpMixin
+from weaver.lang2.op import NumberOpMixin, SliceOpMixin
 
 
 class Predefined:
@@ -8,7 +8,7 @@ class Predefined:
         self.reversed = Variable(1, None, None, None)
 
 
-class Variable(VariableOpMixin):
+class Variable(NumberOpMixin, SliceOpMixin):
     def __init__(self, byte_length, bit_length, length_expr, initial_expr):
         self.byte_length = byte_length
         self.bit_length = bit_length
@@ -39,7 +39,7 @@ class ParseLoopUntil:
         self.pred = pred
 
 
-class IsParsed:
+class IsParsed(NumberOpMixin):
     def __init__(self, layout):
         self.layout = layout
 
@@ -81,16 +81,16 @@ class StateMachine:
 
 
 class Trans:
-    def __init__(self, pred, dest_state, actions):
+    def __init__(self, pred, dest_state, action):
         self.pred = pred
         self.dest_state = dest_state
-        self.actions = actions
+        self.action = action
 
 
 class Event:
-    def __init__(self, pred, actions):
+    def __init__(self, pred, action):
         self.pred = pred
-        self.actions = actions
+        self.action = action
 
 
 class EventMap:
