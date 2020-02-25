@@ -103,7 +103,7 @@ class CreateInstWriter(InstrWriter):
                 f');\n'
                 f'{context.recurse_context.prefetch_name()} = (WV_Any)({inst_aux.name()} = {pre});\n'
                 f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});\n'
-                f'{pre} = malloc({inst_aux.sizeof()});\n'
+                f'{pre} = WV_Malloc({inst_aux.sizeof()});\n'
                 f'memset({pre}, 0, {inst_aux.sizeof()});'
             )
         else:
@@ -125,7 +125,7 @@ class CreateInstWriter(InstrWriter):
                 f'{inst_aux.name()}->flag_rev = 1;',
                 f'WV_InitSeq(&{inst_aux.name()}->seq, {use_data}, {int(context.recurse_context.seq.zero_base)});',
                 f'WV_InitSeq(&{inst_aux.name()}->seq_rev, {use_data}, {int(context.recurse_context.seq.zero_base)});',
-                f'{pre} = malloc({inst_aux.sizeof()});',
+                f'{pre} = WV_Malloc({inst_aux.sizeof()});',
                 f'memset({pre}, 0, {inst_aux.sizeof()});',
             ])
 
@@ -253,7 +253,7 @@ class DestroyInstWriter(InstrWriter):
                 f'  hash(&{prefetch}->k, {context.recurse_context.key_struct_size()})\n'
                 f');\n'
                 f'WV_CleanSeq(&{prefetch}->seq, {use_data});\n'
-                f'free({prefetch});'
+                f'WV_Free({prefetch});'
             )
         else:
             inst = context.recurse_context.inst_struct.create_aux().name()
@@ -268,7 +268,7 @@ class DestroyInstWriter(InstrWriter):
                 f');',
                 f'WV_CleanSeq(&{inst}->seq, {use_data});',
                 f'WV_CleanSeq(&{inst}->seq_rev, {use_data});',
-                f'free({inst});',
+                f'WV_Free({inst});',
             ])
 
 

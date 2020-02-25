@@ -7,6 +7,7 @@
 #include "runtime/types.h"
 #include "runtime/seq.h"
 #include "runtime/profile.h"
+#include "runtime/malloc.h"
 
 // implemented by blackbox
 typedef struct _WV_Runtime WV_Runtime;

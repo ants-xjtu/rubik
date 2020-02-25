@@ -2,6 +2,7 @@
 #define WEAVER_RUNTIME_SEQ_H
 
 #include "types.h"
+#include "malloc.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +27,7 @@ typedef struct {
 static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
 {
     if (use_data) {
-        seq->buffer = malloc(sizeof(WV_Byte) * WV_CONFIG_SeqBufferSize);
+        seq->buffer = WV_Malloc(sizeof(WV_Byte) * WV_CONFIG_SeqBufferSize);
     } else {
         seq->buffer = NULL;
     }
@@ -41,7 +42,7 @@ static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
 static inline WV_U8 WV_CleanSeq(WV_Seq* seq, WV_U8 use_data)
 {
     if (use_data) {
-        free(seq->buffer);
+        WV_Free(seq->buffer);
     }
     return 0;
 }
@@ -263,7 +264,7 @@ static inline WV_U8 WV_Insert(
         assert(offset >= seq->offset);
         assert(offset - seq->offset + data.length <= WV_CONFIG_SeqBufferSize);
         // printf("memcpy (insert)\n");
-        memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
+        WV_Memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
     }
     return _AssertNodes(seq);
 }
@@ -302,9 +303,9 @@ static inline WV_ByteSlice WV_SeqAssemble(WV_Seq* seq, WV_Byte** need_free)
         return (WV_ByteSlice){ .cursor = seq->buffer, .length = ready_length };
     }
 
-    WV_Byte* ready_buffer = malloc(sizeof(WV_Byte) * ready_length);
+    WV_Byte* ready_buffer = WV_Malloc(sizeof(WV_Byte) * ready_length);
     // printf("memcpy\n");
-    memcpy(ready_buffer, &seq->buffer[seq->nodes[0].left - seq->offset],
+    WV_Memcpy(ready_buffer, &seq->buffer[seq->nodes[0].left - seq->offset],
         ready_length);
     seq->offset = seq->nodes[0].right;
     _RemoveNode(seq, 0);

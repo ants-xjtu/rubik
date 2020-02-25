@@ -10,6 +10,9 @@ bb := weaver_blackbox.c
 wb := weaver_whitebox.template.c
 sep = Weaver Auto-generated Blackbox Code
 
+TARGET_FLAG = -DWV_TARGET_$(T)
+export TARGET_FLAG
+
 ### GCC ###
 GCC = gcc
 GCC_OPT = -m64 # -Wall -DNEWEV -Werror
@@ -67,7 +70,7 @@ SRCS = $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
 all: $(APP)
 
 $(APP): $(SRCS)
-	$(GCC) $(GCC_OPT) -o $@ $^ $(INC) $(LIBS) $(LIB_FLAGS)
+	$(GCC) $(GCC_OPT) -o $@ $^ $(INC) $(LIBS) $(LIB_FLAGS) $(TARGET_FLAG)
 
 native/runtime/libwvrt.a:
 	$(MAKE) -C native/runtime

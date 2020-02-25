@@ -7,7 +7,7 @@ tommyds/tommy.o:
 	$(MAKE) -C tommyds
 
 %.o: %.c %.h types.h
-	$(CC) -c -g -O3 $< -I./tommyds
+	$(CC) -c -g -O3 $< -I./tommyds $(TARGET_FLAG)
 
 clean:
 	-$(RM) libwvrt.a

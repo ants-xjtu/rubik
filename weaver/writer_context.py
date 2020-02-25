@@ -150,10 +150,10 @@ class GlobalContext:
             f'tommy_hashdyn hash_{lid};' for lid in self.required_inst.keys()
         ])) + ';'
         alloc_runtime = 'WV_Runtime *WV_AllocRuntime() ' + make_block('\n'.join([
-            'WV_Runtime *rt = malloc(sizeof(WV_Runtime));',
+            'WV_Runtime *rt = WV_Malloc(sizeof(WV_Runtime));',
             *[
                 f'tommy_hashdyn_init(&rt->hash_{lid});\n' +
-                f'rt->{GlobalContext.prealloc(lid)} = malloc(sizeof({struct.create_aux().typedef()}));\n' +
+                f'rt->{GlobalContext.prealloc(lid)} = WV_Malloc(sizeof({struct.create_aux().typedef()}));\n' +
                 f'memset(rt->{GlobalContext.prealloc(lid)}, 0, sizeof({struct.create_aux().typedef()}));'
                 for lid, struct in self.required_inst.items()
             ],
@@ -163,10 +163,10 @@ class GlobalContext:
             *[
                 # TODO: free instances in table
                 f'tommy_hashdyn_done(&rt->hash_{lid});\n' +
-                f'free(rt->{GlobalContext.prealloc(lid)});'
+                f'WV_Free(rt->{GlobalContext.prealloc(lid)});'
                 for lid, struct in self.required_inst.items()
             ],
-            'free(rt);',
+            'WV_Free(rt);',
             'return 0;',
         ]))
         get_profile = 'WV_Profile *WV_GetProfile(WV_Runtime *rt) ' + make_block('\n'.join([
