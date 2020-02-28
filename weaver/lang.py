@@ -1,5 +1,7 @@
 # interface definition
 # all implementation for compilation lives in weaver.compile
+# NOTICE: only import when duck type is needed, if not, use functions in weaver.compile directly
+# as interface
 from weaver.util import indent_join
 from weaver.compile import (
     compile1_layout,
@@ -193,7 +195,7 @@ class Bit(NumberOpMixin):
         self.init = init
 
     def __str__(self):
-        if self.length is not None:
+        if isinstance(self.length, int):
             return f"$_u{self.length}"
         else:
             return "$_s"

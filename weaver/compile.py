@@ -40,21 +40,20 @@ class StackContext:
     def __init__(self):
         self.reg_count = 100
         self.struct_count = 0
-        self.reg_map = {}
-        self.struct_map = {}
+        self.reg_map = {}  # reg(aka int) -> HeaderReg/TempReg/InstReg
+        self.struct_map = {}  # struct(aka int) -> [reg(aka int)]
 
 
 class LayerContext:
     def __init__(self, layer_id, stack):
         self.layer_id = layer_id
         self.stack = stack
-        self.var_map = {}
+        self.var_map = {}  # var(aka bit) -> reg(aka int)
         self.structs = set()
         self.inst = None
         self.buffer_data = False
         self.zero_based = None
-        self.layout_map = {}
-        self.header_action_map = {}
+        self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -217,7 +216,6 @@ def compile1_layout(layout, context):
     if struct_length != 0:
         struct_id = context.finalize_struct()
         actions.append(LocateStruct(struct_id, struct_length, parsed_reg))
-    context.header_action_map[actions[0]] = context.var_map[layout_parsed_var]
     return actions
 
 
@@ -236,17 +234,6 @@ class TempReg:
         self.length_expr4 = length_expr4
 
         self.expr6 = f"${self.reg_id}"
-
-
-class InstReg:
-    def __init__(self, reg_id, layer_id, byte_length, initial_expr, debug_name):
-        self.reg_id = reg_id
-        self.layer_id = layer_id
-        self.byte_length = byte_length
-        self.initial_expr = initial_expr
-        self.debug_name = debug_name
-
-        self.expr6 = f"{compile6_inst_expr(self.layer_id)}->_{self.reg_id}"
 
 
 def compile2_layout(layout, context):
@@ -413,20 +400,15 @@ class Eval1Abstract:
         raise NotConstant()
 
 
-def compile3a_prototype(prototype, stack, layer_id):
-    context = LayerContext(layer_id, stack)
-    header1 = prototype.header.compile1(context)
-    if prototype.temp is not None:
-        compile2_layout(prototype.temp, context)
-    # TODO: collect vexpr
-    if prototype.selector is not None:
-        assert context.inst is None
-        context.inst = compile3_inst(prototype.selector, prototype.perm, context)
-    if prototype.seq is not None:
-        compile2_seq(prototype.seq, context)
-    return Layer(
-        context, header1, prototype.preprocess, prototype.seq, prototype.psm, None
-    )
+class InstReg:
+    def __init__(self, reg_id, layer_id, byte_length, initial_expr, debug_name):
+        self.reg_id = reg_id
+        self.layer_id = layer_id
+        self.byte_length = byte_length
+        self.initial_expr = initial_expr
+        self.debug_name = debug_name
+
+        self.expr6 = f"{compile6_inst_expr(self.layer_id)}->_{self.reg_id}"
 
 
 def compile3_inst(selector, layout, context):
@@ -578,6 +560,22 @@ class BiInst:
 
     def compile5(self, context):
         return compile5_inst(self, context)
+
+
+def compile3a_prototype(prototype, stack, layer_id):
+    context = LayerContext(layer_id, stack)
+    header1 = prototype.header.compile1(context)
+    if prototype.temp is not None:
+        compile2_layout(prototype.temp, context)
+    # TODO: collect vexpr
+    if prototype.selector is not None:
+        assert context.inst is None
+        context.inst = compile3_inst(prototype.selector, prototype.perm, context)
+    if prototype.seq is not None:
+        compile2_seq(prototype.seq, context)
+    return Layer(
+        context, header1, prototype.preprocess, prototype.seq, prototype.psm, None
+    )
 
 
 class Layer:
