@@ -61,8 +61,13 @@ class Branch:
 
 
 class Block:
+    count = 0
+
     def __init__(self, instr_list, pred, yes_block, no_block):
         self.instr_list = instr_list
         self.pred = pred
         self.yes_block = yes_block
         self.no_block = no_block
+
+        self.block_id = Block.count
+        Block.count += 1

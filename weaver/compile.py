@@ -3,10 +3,10 @@ compile (almost) everything
 currently there are 7 different compilation stages and 2 evaluation stages
 compile1: allocate header structs and field registers, generate low level header actions
   signature: (LayerContext) -> [low level header actions]
-compile2: allocate temporary (local/automatical) registers
+compile2: modify context only
   signature: (LayerContext) -> None
-compile3: allocate perminent (instance-owned) registers, generate instance helper object
-  signature: (LayerContext) -> <someone implements compile5> (currently Inst/BiInst)
+compile3: modify context and replace self
+  signature: (LayerContext) -> <someone implements compile5>
 compile4: generate content for expressions
   signature: (LayerContext) -> weaver.prog.Expr(..., <someone impl eval1>, compile6)
 compile5: generate content for statements
@@ -25,6 +25,9 @@ compile7: generated C code for statement, without postfix '\n'
 NOTICE: compile1-5 also modify LayerContext to archieve non-local code generation, such as
 external function declaration
 NOTICE: compile7_branch and compile7_block lives in weaver.compile2 module to prevent circle dep
+NOTICE: compile3a_prototype and compile5a_layer are two special functions that work on layer level
+they complete stage 3 and 5 respectively for whole layer, and their signatures are a little
+different to other functions in compile3 and compile5 families
 """
 
 from weaver.prog import Expr, UpdateReg, Branch, NotConstant, Block
@@ -47,7 +50,11 @@ class LayerContext:
         self.stack = stack
         self.var_map = {}
         self.structs = set()
-        self.inst_regs = set()
+        self.inst = None
+        self.buffer_data = False
+        self.zero_based = None
+        self.layout_map = {}
+        self.header_action_map = {}
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -64,11 +71,11 @@ class LayerContext:
         return self.stack.struct_count - 1
 
     def alloc_temp_reg(self, var, name):
-        if var.length is not None:
+        if isinstance(var.length, int):
             assert var.length % 8 == 0
-            reg = TempReg(self.stack.reg_count, var.length // 8, name)
+            reg = TempReg(self.stack.reg_count, var.length // 8, None, name)
         else:
-            reg = TempReg(self.stack.reg_count, None, name)
+            reg = TempReg(self.stack.reg_count, None, var.length.compile4(self), name)
         self.var_map[var] = self.stack.reg_count
         self.stack.reg_map[self.stack.reg_count] = reg
         self.stack.reg_count += 1
@@ -84,7 +91,6 @@ class LayerContext:
             reg = InstReg(self.stack.reg_count, self.layer_id, None, var.init, name)
         self.var_map[var] = self.stack.reg_count
         self.stack.reg_map[self.stack.reg_count] = reg
-        self.inst_regs.add(self.stack.reg_count)
         self.stack.reg_count += 1
 
     @property
@@ -105,11 +111,32 @@ class LayerContext:
 
     @property
     def search_expr6(self):
-        return "search"
+        return "\n".join(
+            [
+                f"tommy_hashdyn_search(",
+                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k,",
+                f"  hash(&{self.prealloc_expr6}->k, sizeof(L{self.layer_id}K))",
+                ")",
+            ]
+        )
 
     @property
     def insert_stat7(self):
-        return "insert"
+        return self.insert_stat7_impl("")
+
+    @property
+    def insert_rev_stat7(self):
+        return self.insert_stat7_impl("_rev")
+
+    def insert_stat7_impl(self, postfix):
+        return "\n".join(
+            [
+                f"tommy_hashdyn_insert(",
+                f"  &runtime->t{self.layer_id}, &{self.prealloc_expr6}->node{postfix}, &{self.prealloc_expr6}->k{postfix},",
+                f"  hash(&{self.prealloc_expr6}->k{postfix}, sizeof(L{self.layer_id}K))",
+                ")",
+            ]
+        )
 
 
 def compile6_inst_expr(layer_id):
@@ -127,17 +154,55 @@ class HeaderReg:
 
 
 class LocateStruct:
-    def __init__(self, struct_id):
-        self.struct_id = struct_id
+    def __init__(self, struct_id, struct_length, parsed_reg):
+        self.compile7 = "\n".join(
+            [
+                f"h{struct_id} = (WV_Any)current;",
+                f"current = WV_SliceAfter(current, {struct_length});",
+                f"{parsed_reg.expr6} = 1;",
+            ]
+        )
+
+
+class CoverSlice:
+    def __init__(self, slice_reg, parsed_reg):
+        self.compile7 = "\n".join(
+            [
+                f"{slice_reg.expr6}.cursor = current;",
+                f"{slice_reg.expr6}.length = {slice_reg.length_expr4.compile6[0]}; "
+                f"// {slice_reg.length_expr4.compile6[1]}",
+                f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
+                f"{parsed_reg.expr6} = 1;",
+            ]
+        )
 
 
 def compile1_layout(layout, context):
+    layout_parsed_var = lambda: None
+    layout_parsed_var.length = 8
+    context.alloc_temp_reg(layout_parsed_var, f"parsed({layout.__name__})")
+    context.layout_map[layout] = context.var_map[layout_parsed_var]
+    parsed_reg = context.stack.reg_map[context.var_map[layout_parsed_var]]
+
     bits_pack = []
     pack_length = 0
+    struct_length = 0
+    actions = []
     for name, bit in layout.name_map.items():
-        if bit.length % 8 == 0:
+        if not isinstance(bit.length, int):
+            assert pack_length == 0
+            if struct_length != 0:
+                struct_id = context.finalize_struct()
+                actions.append(LocateStruct(struct_id, struct_length, parsed_reg))
+                struct_length = 0
+            context.alloc_temp_reg(bit, layout.__name__ + "." + name)
+            actions.append(
+                CoverSlice(context.stack.reg_map[context.var_map[bit]], parsed_reg)
+            )
+        elif bit.length % 8 == 0:
             assert bits_pack == []
             context.alloc_header_reg(bit, layout.__name__ + "." + name)
+            struct_length += bit.length // 8
         else:
             bits_pack.append((name, bit))
             pack_length += bit.length
@@ -148,8 +213,12 @@ def compile1_layout(layout, context):
                     context.alloc_header_reg(bit, layout.__name__ + "." + name)
                 bits_pack = []
                 pack_length = 0
-    struct_id = context.finalize_struct()
-    return [LocateStruct(struct_id)]
+                struct_length += 1
+    if struct_length != 0:
+        struct_id = context.finalize_struct()
+        actions.append(LocateStruct(struct_id, struct_length, parsed_reg))
+    context.header_action_map[actions[0]] = context.var_map[layout_parsed_var]
+    return actions
 
 
 def compile1_header_action(action, context):
@@ -160,10 +229,11 @@ def compile1_header_action(action, context):
 
 
 class TempReg:
-    def __init__(self, reg_id, byte_length, debug_name):
+    def __init__(self, reg_id, byte_length, length_expr4, debug_name):
         self.reg_id = reg_id
         self.byte_length = byte_length
         self.debug_name = debug_name
+        self.length_expr4 = length_expr4
 
         self.expr6 = f"${self.reg_id}"
 
@@ -182,6 +252,10 @@ class InstReg:
 def compile2_layout(layout, context):
     for name, bit in layout.name_map.items():
         context.alloc_temp_reg(bit, "temp." + name)
+
+
+def compile2_seq(seq, context):
+    context.zero_based = seq.zero_based
 
 
 def compile4_const(const):
@@ -319,6 +393,17 @@ def compile6h_op1(name, expr):
         assert False, f"unknown op1 {name}"
 
 
+def compile4_header_contain(layout, context):
+    return Expr(
+        {StackContext.HEADER},
+        Eval1Abstract(),
+        code_comment(
+            f"{context.stack.reg_map[context.layout_map[layout]].expr6} == 1",
+            f"<layout {layout.__name__} is parsed>",
+        ),
+    )
+
+
 def compile4_payload():
     return Expr({StackContext.HEADER}, Eval1Abstract(), ("current", "$payload"))
 
@@ -328,17 +413,19 @@ class Eval1Abstract:
         raise NotConstant()
 
 
-def compile0_prototype(prototype, context):
+def compile3a_prototype(prototype, stack, layer_id):
+    context = LayerContext(layer_id, stack)
     header1 = prototype.header.compile1(context)
     if prototype.temp is not None:
-        prototype.temp.compile2(context)
+        compile2_layout(prototype.temp, context)
     # TODO: collect vexpr
     if prototype.selector is not None:
-        inst3 = compile3_inst(prototype.selector, prototype.perm, context)
-    else:
-        inst3 = None
+        assert context.inst is None
+        context.inst = compile3_inst(prototype.selector, prototype.perm, context)
+    if prototype.seq is not None:
+        compile2_seq(prototype.seq, context)
     return Layer(
-        header1, inst3, prototype.preprocess, prototype.seq, prototype.psm, None
+        context, header1, prototype.preprocess, prototype.seq, prototype.psm, None
     )
 
 
@@ -346,20 +433,24 @@ def compile3_inst(selector, layout, context):
     for name, var in layout.name_map.items():
         context.alloc_inst_reg(var, "perm." + name)
     # TODO: perm var from context
+
+    inst_regs = [context.var_map[var] for var in layout.name_map.values()]
     if isinstance(selector, list):
-        return Inst({context.var_map[var] for var in selector})
+        return Inst([context.var_map[var] for var in selector], inst_regs)
     else:
         vars1, vars2 = selector
         return BiInst(
-            {context.var_map[var] for var in vars1},
-            {context.var_map[var] for var in vars2},
+            [context.var_map[var] for var in vars1],
+            [context.var_map[var] for var in vars2],
+            inst_regs,
         )
 
 
 class Inst:
-    def __init__(self, key_regs):
+    def __init__(self, key_regs, inst_regs):
         self.key_regs = key_regs
-        self.prefetch = create_prefetch_inst(key_regs)
+        self.inst_regs = inst_regs
+        self.prefetch = PrefetchInst
         self.fetch = FetchInst
         self.create = CreateInst
 
@@ -384,11 +475,11 @@ def compile5_inst(inst, context):
                     f"load {context.stack.reg_map[inst_reg].debug_name} from instance"
                 ),
             )
-            for inst_reg in context.inst_regs
+            for inst_reg in inst.inst_regs
         ],
     ]
     init_stats = []
-    for inst_reg in context.inst_regs:
+    for inst_reg in inst.inst_regs:
         initial_expr4 = context.stack.reg_map[inst_reg].initial_expr.compile4(context)
         init_stats.append(
             UpdateReg(
@@ -413,7 +504,7 @@ def compile5_inst(inst, context):
     return [
         UpdateReg(
             StackContext.INSTANCE,
-            Expr(inst.key_regs, Eval1Abstract(), None),
+            Expr(set(inst.key_regs), Eval1Abstract(), None),
             True,
             inst.prefetch(context).compile7,
         ),
@@ -443,26 +534,23 @@ class FetchInst:
         )
 
 
-def create_prefetch_inst(key_regs):
-    class PrefetchInst:
-        def __init__(self, context):
-            self.compile7 = "\n".join(
-                [
-                    *[
-                        code_comment(
-                            f"{context.prealloc_expr6}._{reg} = {context.stack.reg_map[reg].expr6};",
-                            f"set key for {context.stack.reg_map[reg].debug_name}",
-                        )
-                        for reg in key_regs
-                    ],
+class PrefetchInst:
+    def __init__(self, context):
+        self.compile7 = "\n".join(
+            [
+                *[
                     code_comment(
-                        f"{context.prefetch_expr6} = {context.search_expr6};",
-                        "prefetch instance",
-                    ),
+                        f"{context.prealloc_expr6}._{reg} = {context.stack.reg_map[reg].expr6};",
+                        f"set key for {context.stack.reg_map[reg].debug_name}",
+                    )
+                    for reg in context.inst.key_regs
                 ],
-            )
-
-    return PrefetchInst
+                code_comment(
+                    f"{context.prefetch_expr6} = {context.search_expr6};",
+                    "prefetch instance",
+                ),
+            ],
+        )
 
 
 class CreateInst:
@@ -472,7 +560,7 @@ class CreateInst:
                 [
                     context.insert_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
-                    "// init seq",
+                    f"WV_InitSeq(&{context.inst_expr6}, {int(context.buffer_data)}, {int(context.zero_based)});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, (sizeof({context.inst_type6}));",
                 ]
@@ -482,32 +570,44 @@ class CreateInst:
 
 
 class BiInst:
-    def __init__(self, key_regs1, key_regs2):
+    def __init__(self, key_regs1, key_regs2, inst_regs):
         self.key_regs1 = key_regs1
         self.key_regs2 = key_regs2
-        self.key_regs = key_regs1 | key_regs2
+        self.inst_regs = inst_regs
+        self.key_regs = key_regs1 + key_regs2
 
     def compile5(self, context):
         return compile5_inst(self, context)
 
 
 class Layer:
-    def __init__(self, header, inst, general, seq, psm, event):
+    def __init__(self, context, header, general, seq, psm, event):
+        self.context = context
         self.header = header
-        self.inst = inst
         self.general = general
         self.seq = seq
         self.psm = psm
         self.event = event
 
 
-def compile5_layer(layer, context):
-    instr_list = [
+def compile5a_layer(layer):
+    instr_list = compile5_header(layer.header, layer.context)
+    if layer.context.inst is not None:
+        instr_list += layer.context.inst.compile5(layer.context)
+    if layer.general is not None:
+        instr_list += layer.general.compile5(layer.context)
+    if layer.seq is not None:
+        instr_list += compile5_seq(layer.seq, layer.context)
+    return Block(instr_list, None, None, None)
+
+
+def compile5_header(header, context):
+    return [
         UpdateReg(
             StackContext.HEADER,
             Expr(set(), Eval1Abstract(), None),
             True,
-            compile7_header(layer.header),
+            "\n".join(action.compile7 for action in header),
         ),
         *[
             UpdateReg(
@@ -522,17 +622,6 @@ def compile5_layer(layer, context):
             for reg in context.stack.struct_map[struct]
         ],
     ]
-    if layer.inst is not None:
-        instr_list += layer.inst.compile5(context)
-    if layer.general is not None:
-        instr_list += layer.general.compile5(context)
-    if layer.seq is not None:
-        instr_list += compile5_seq(layer.seq, context)
-    return Block(instr_list, None, None, None)
-
-
-def compile7_header(header):
-    return "// parse header"
 
 
 def compile5_seq(seq, context):
@@ -548,6 +637,10 @@ def compile5_seq(seq, context):
                 None,
             ),
             True,
-            "insert",
+            code_comment(
+                f"WV_Insert(&{context.prefetch_expr6}->seq, {offset4.compile6[0]}, "
+                f"{data4.compile6[0]}, {takeup4.compile6[0]}, 0, 0, 0);",
+                f"insert OFFSET {offset4.compile6[1]} DATA {data4.compile6[1]} TAKEUP {takeup4.compile6[1]}",
+            ),
         )
     ]

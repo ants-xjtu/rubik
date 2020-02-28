@@ -4,12 +4,12 @@ from weaver.util import indent_join
 from weaver.compile import (
     compile1_layout,
     compile1_header_action,
-    compile2_layout,
     compile4_const,
     compile4_op2,
     compile4_op1,
     compile4_var,
     compile4_payload,
+    compile4_header_contain,
     compile5_assign,
     compile5_action,
     eval1_const,
@@ -35,9 +35,6 @@ class LayoutMeta(type, HeaderActionOpMixin):
 
     def compile1(self, context):
         return compile1_layout(self, context)
-
-    def compile2(self, context):
-        return compile2_layout(self, context)
 
 
 class layout(metaclass=LayoutMeta):
@@ -162,8 +159,11 @@ class Connectionless:
         self.payload = PayloadExpr()
         self.payload_len = self.payload.length
 
+    def header_contain(self, layout):
+        return HeaderContainOp(layout)
 
-class NumberOpMixin:
+
+class CommonNumberOpMixin:
     def __add__(self, other):
         return AddOp(self, Const.wrap_int(other))
 
@@ -172,6 +172,19 @@ class NumberOpMixin:
 
     def __sub__(self, other):
         return SubOp(self, Const.wrap_int(other))
+
+
+# used by compounded expressions
+class NumberOpMixin(CommonNumberOpMixin):
+    pass
+
+
+class HeaderContainOp(NumberOpMixin):
+    def __init__(self, layout):
+        self.layout = layout
+
+    def compile4(self, context):
+        return compile4_header_contain(self.layout, context)
 
 
 class Bit(NumberOpMixin):
