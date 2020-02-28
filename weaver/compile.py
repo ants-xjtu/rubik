@@ -1,4 +1,34 @@
+"""
+compile (almost) everything
+currently there are 7 different compilation stages and 2 evaluation stages
+compile1: allocate header structs and field registers, generate low level header actions
+  signature: (LayerContext) -> [low level header actions]
+compile2: allocate temporary (local/automatical) registers
+  signature: (LayerContext) -> None
+compile3: allocate perminent (instance-owned) registers, generate instance helper object
+  signature: (LayerContext) -> <someone implements compile5> (currently Inst/BiInst)
+compile4: generate content for expressions
+  signature: (LayerContext) -> weaver.prog.Expr(..., <someone impl eval1>, compile6)
+compile5: generate content for statements
+  signature: (LayerContext) -> weaver.prog.UpdateReg(..., ..., ..., compile7)/weaver.prog.Branch
+NOTICE: compile6 is generated in compile4 stage, so as compile7 in compile5
+NOTICE: compile7 of Branch is statically generated and there's no interface to customize it
+eval1: (try to) evaluate expression
+  signature: (EvalContext) -> <python object represents value> throws weaver.prog.NotConstant
+eval2: (try to) evaluate statement, statically implemented in weaver.prog
+  signature: (EvalContext) -> None
+compile6: generated C code for expression
+  signature: (<str for valid C code>, <str for debug info>)
+compile7: generated C code for statement, without postfix '\n'
+  signature: str, recommend to '// <debug info> \n <C code>', 
+    or weaver.util.code_comment(<C code>, <debug info>)
+NOTICE: compile1-5 also modify LayerContext to archieve non-local code generation, such as
+external function declaration
+NOTICE: compile7_branch and compile7_block lives in weaver.compile2 module to prevent circle dep
+"""
+
 from weaver.prog import Expr, UpdateReg, Branch, NotConstant, Block
+from weaver.util import code_comment, comment_only
 
 
 class StackContext:
@@ -57,19 +87,33 @@ class LayerContext:
         self.inst_regs.add(self.stack.reg_count)
         self.stack.reg_count += 1
 
-    def inst_expr(self):
+    @property
+    def inst_expr6(self):
         return compile6_inst_expr(self.layer_id)
 
-    def prefetch_expr(self):
-        return compile6_prefetch_expr(self.layer_id)
+    @property
+    def prefetch_expr6(self):
+        return f"l{self.layer_id}_f"
+
+    @property
+    def prealloc_expr6(self):
+        return f"runtime->l{self.layer_id}_p"
+
+    @property
+    def inst_type6(self):
+        return f"L{self.layer_id}I"
+
+    @property
+    def search_expr6(self):
+        return "search"
+
+    @property
+    def insert_stat7(self):
+        return "insert"
 
 
 def compile6_inst_expr(layer_id):
     return f"l{layer_id}_i"
-
-
-def compile6_prefetch_expr(layer_id):
-    return f"l{layer_id}_f"
 
 
 class HeaderReg:
@@ -79,8 +123,7 @@ class HeaderReg:
         self.debug_name = debug_name
         self.bit_length = bit_length
 
-    def as_expr(self):
-        return f"h{self.struct_id}->_{self.reg_id}"
+        self.expr6 = f"h{self.struct_id}->_{self.reg_id}"
 
 
 class LocateStruct:
@@ -122,8 +165,7 @@ class TempReg:
         self.byte_length = byte_length
         self.debug_name = debug_name
 
-    def as_expr(self):
-        return f"${self.reg_id}"
+        self.expr6 = f"${self.reg_id}"
 
 
 class InstReg:
@@ -134,13 +176,12 @@ class InstReg:
         self.initial_expr = initial_expr
         self.debug_name = debug_name
 
-    def as_expr(self):
-        return f"{compile6_inst_expr(self.layer_id)}->_{self.reg_id}"
+        self.expr6 = f"{compile6_inst_expr(self.layer_id)}->_{self.reg_id}"
 
 
 def compile2_layout(layout, context):
     for name, bit in layout.name_map.items():
-        context.alloc_temp_reg(bit, name)
+        context.alloc_temp_reg(bit, "temp." + name)
 
 
 def compile4_const(const):
@@ -157,7 +198,7 @@ def compile4_var(var, context):
         {reg},
         Eval1Var(reg),
         (
-            context.stack.reg_map[reg].as_expr(),
+            context.stack.reg_map[reg].expr6,
             "$" + context.stack.reg_map[reg].debug_name,
         ),
     )
@@ -177,11 +218,9 @@ class Eval1Var:
 def compile5_assign(assign, context):
     reg = context.var_map[assign.var]
     expr4 = assign.expr.compile4(context)
-    text = "\n".join(
-        [
-            f"// {context.stack.reg_map[reg].debug_name} = {expr4.compile6[1]}",
-            f"{context.stack.reg_map[reg].as_expr()} = {expr4.compile6[0]};",
-        ]
+    text = code_comment(
+        f"{context.stack.reg_map[reg].expr6} = {expr4.compile6[0]};",
+        f"{context.stack.reg_map[reg].debug_name} = {expr4.compile6[1]}",
     )
     return [UpdateReg(reg, expr4, False, text)]
 
@@ -305,7 +344,7 @@ def compile0_prototype(prototype, context):
 
 def compile3_inst(selector, layout, context):
     for name, var in layout.name_map.items():
-        context.alloc_inst_reg(var, name)
+        context.alloc_inst_reg(var, "perm." + name)
     # TODO: perm var from context
     if isinstance(selector, list):
         return Inst({context.var_map[var] for var in selector})
@@ -320,6 +359,9 @@ def compile3_inst(selector, layout, context):
 class Inst:
     def __init__(self, key_regs):
         self.key_regs = key_regs
+        self.prefetch = create_prefetch_inst(key_regs)
+        self.fetch = FetchInst
+        self.create = CreateInst
 
     def compile5(self, context):
         return compile5_inst(self, context)
@@ -328,14 +370,19 @@ class Inst:
 def compile5_inst(inst, context):
     fetch_route = [
         UpdateReg(
-            StackContext.INSTANCE, Expr(set(), Eval1Abstract(), None), True, "fetch",
+            StackContext.INSTANCE,
+            Expr(set(), Eval1Abstract(), None),
+            True,
+            inst.fetch(context).compile7,
         ),
         *[
             UpdateReg(
                 inst_reg,
                 Expr({StackContext.INSTANCE}, Eval1Abstract(), None),
                 False,
-                f"// load {context.stack.reg_map[inst_reg].debug_name} from instance",
+                comment_only(
+                    f"load {context.stack.reg_map[inst_reg].debug_name} from instance"
+                ),
             )
             for inst_reg in context.inst_regs
         ],
@@ -346,14 +393,20 @@ def compile5_inst(inst, context):
         init_stats.append(
             UpdateReg(
                 inst_reg,
-                initial_expr4[0],
+                initial_expr4,
                 False,
-                f"// initialize {context.stack.reg_map[inst_reg].debug_name} to {initial_expr4[1]}",
+                code_comment(
+                    f"{context.stack.reg_map[inst_reg].expr6} = {initial_expr4.compile6[0]};",
+                    f"initialize {context.stack.reg_map[inst_reg].debug_name} to {initial_expr4.compile6[1]}",
+                ),
             )
         )
     create_route = [
         UpdateReg(
-            StackContext.INSTANCE, Expr(set(), Eval1Abstract(), None), True, "create",
+            StackContext.INSTANCE,
+            Expr(set(), Eval1Abstract(), None),
+            True,
+            inst.create(context).compile7,
         ),
         *init_stats,
     ]
@@ -362,10 +415,14 @@ def compile5_inst(inst, context):
             StackContext.INSTANCE,
             Expr(inst.key_regs, Eval1Abstract(), None),
             True,
-            "prefetch",
+            inst.prefetch(context).compile7,
         ),
         Branch(
-            Expr({StackContext.INSTANCE}, Eval1Abstract(), ("...", "instance exist")),
+            Expr(
+                {StackContext.INSTANCE},
+                Eval1Abstract(),
+                (context.prefetch_expr6, "instance exist"),
+            ),
             fetch_route,
             create_route,
         ),
@@ -373,15 +430,65 @@ def compile5_inst(inst, context):
             StackContext.SEQUENCE,
             Expr({StackContext.INSTANCE}, Eval1Abstract(), None),
             False,
-            "// load sequence state from instance",
+            comment_only("load sequence state from instance"),
         ),
     ]
 
 
+class FetchInst:
+    def __init__(self, context):
+        self.compile7 = code_comment(
+            f"{context.inst_expr6} = (WV_Any){context.prefetch_expr6};",
+            "fetch instance",
+        )
+
+
+def create_prefetch_inst(key_regs):
+    class PrefetchInst:
+        def __init__(self, context):
+            self.compile7 = "\n".join(
+                [
+                    *[
+                        code_comment(
+                            f"{context.prealloc_expr6}._{reg} = {context.stack.reg_map[reg].expr6};",
+                            f"set key for {context.stack.reg_map[reg].debug_name}",
+                        )
+                        for reg in key_regs
+                    ],
+                    code_comment(
+                        f"{context.prefetch_expr6} = {context.search_expr6};",
+                        "prefetch instance",
+                    ),
+                ],
+            )
+
+    return PrefetchInst
+
+
+class CreateInst:
+    def __init__(self, context):
+        self.compile7 = code_comment(
+            "\n".join(
+                [
+                    context.insert_stat7,
+                    f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+                    "// init seq",
+                    f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
+                    f"memset({context.prealloc_expr6}, 0, (sizeof({context.inst_type6}));",
+                ]
+            ),
+            "create instance",
+        )
+
+
 class BiInst:
-    def __init__(self, key_reg1, key_reg2):
-        self.key_reg1 = key_reg1
-        self.key_reg2 = key_reg2
+    def __init__(self, key_regs1, key_regs2):
+        self.key_regs1 = key_regs1
+        self.key_regs2 = key_regs2
+        self.key_regs = key_regs1 | key_regs2
+
+    def compile5(self, context):
+        return compile5_inst(self, context)
 
 
 class Layer:
@@ -407,7 +514,9 @@ def compile5_layer(layer, context):
                 reg,
                 Expr(StackContext.HEADER, Eval1Abstract(), None),
                 False,
-                f"// parse header -> ${context.stack.reg_map[reg].debug_name}",
+                comment_only(
+                    f"set header field ${context.stack.reg_map[reg].debug_name}"
+                ),
             )
             for struct in context.structs
             for reg in context.stack.struct_map[struct]
