@@ -1,4 +1,3 @@
 {
-    "python.pythonPath": "/home/cowsay/Projects/weaver/env/bin/python3",
-    "python.formatting.provider": "black"
+    "python.pythonPath": "env/bin/python3"
 }

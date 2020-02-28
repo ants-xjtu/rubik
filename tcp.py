@@ -1,4 +1,4 @@
-from weaver_lagacy.lang import (
+from weaver.lang import (
     layout,
     Bit,
     ConnectionOriented,
@@ -102,8 +102,7 @@ class tcp_data(layout):
 class tcp_temp(layout):
     wnd = Bit(32)
     wnd_size = Bit(32)
-    data_len = Bit(64)
-    data = Slice()
+    data_len = Bit(32)
 
 
 def tcp_parser(ip):
@@ -139,18 +138,18 @@ def tcp_parser(ip):
     SYN_SENT, SYN_RCV, EST, FIN_WAIT_1, CLOSE_WAIT, LAST_ACK = make_psm_state(6)
     TERMINATE = PSMState(accept=True)
 
-    def assign_data(data=NoData(), data_len=0):
-        return Assign(tcp.temp.data_len, data_len) + Assign(tcp.temp.data, data)
-
-    tcp.preprocess = If(tcp.header.ack == 1) >> assign_data(
-        tcp.payload, tcp.payload_len
+    tcp.preprocess = If(tcp.header.ack == 1) >> Assign(
+        tcp.temp.data_len, tcp.payload_len
     )
     tcp.preprocess = (
-        If(tcp.header.syn == 1) >> assign_data(NoData(), 1) >> Else() >> tcp.preprocess
+        If(tcp.header.syn == 1)
+        >> Assign(tcp.temp.data_len, 1)
+        >> Else()
+        >> tcp.preprocess
     )
     tcp.preprocess = (
         If(tcp.header.fin == 1)
-        >> assign_data(tcp.payload, tcp.payload_len + 1)
+        >> Assign(tcp.temp.data_len, tcp.payload_len + 1)
         + (
             If(tcp.current_state == EST)
             >> Assign(tcp.perm.fin_seq1, tcp.header.seq_num + tcp.payload_len)
@@ -188,7 +187,8 @@ def tcp_parser(ip):
 
     tcp.seq = Sequence(
         meta=tcp.header.seq_num,
-        data=tcp.temp.data,
+        zero_based=False,
+        data=tcp.payload,
         data_len=tcp.temp.data_len,
         window=(tcp.temp.wnd, tcp.temp.wnd + tcp.temp.wnd_size),
     )

@@ -1,25 +1,18 @@
-import importlib
-import sys
-from weaver.writer_context import GlobalContext
+from sys import argv
+from importlib import import_module
+
+from weaver.compile import (
+    StackContext,
+    LayerContext,
+    compile0_prototype,
+    compile5_layer,
+)
 
 
-conf = importlib.import_module(sys.argv[1])
-stack = conf.stack
-stack_entry = conf.stack_entry
-stack_map = conf.stack_map
-
-nexti_map = {}
-compiled = {}
-for name, allocated_bundle in stack.items():
-    compiled[name] = allocated_bundle.compile_bundle(name, stack_map.get(name, None))
-    compiled[name].register_nexti(nexti_map)
-
-context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})
-for bundle in compiled.values():
-    bundle.execute_in(context)
-context.execute_all()
-
-print('/* Weaver Whitebox Code Template */')
-print(context.write_template())
-print('/* Weaver Auto-generated Blackbox Code */')
-print(context.write_all(compiled[stack_entry].recurse))
+protocol = import_module(argv[1]).ip_parser()
+stack_context = StackContext()
+layer_context = LayerContext(0, stack_context)
+layer = compile0_prototype(protocol, layer_context)
+block = compile5_layer(layer, layer_context)
+for instr in block.instr_list:
+    print(instr.compile7)
