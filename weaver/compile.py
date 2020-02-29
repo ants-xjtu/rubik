@@ -19,6 +19,8 @@ eval2: (try to) evaluate statement, statically implemented in weaver.prog
   signature: (EvalContext) -> None
 compile6: generated C code for expression
   signature: (<str for valid C code>, <str for debug info>)
+CAUTION: this signature has been proved to be a bad design, because when a single string is
+accidentially taken place of the expected tuple, nothing but weird result is caused
 compile7: generated C code for statement, without postfix '\n'
   signature: str, recommend to '// <debug info> \n <C code>', 
     or weaver.util.code_comment(<C code>, <debug info>)
@@ -501,7 +503,7 @@ def compile4_header_contain(layout, context):
     return Expr(
         {StackContext.HEADER},
         Eval1Abstract(),
-        code_comment(
+        (
             f"{context.stack.reg_map[context.layout_map[layout]].expr6} == 1",
             f"<layout {layout.__name__} is parsed>",
         ),
