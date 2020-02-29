@@ -10,8 +10,5 @@ from weaver.compile import (
 from weaver.compile2 import compile7_block
 
 
-protocol = import_module(argv[1]).ip_parser()
-stack_context = StackContext()
-layer = compile3a_prototype(protocol, stack_context, 0)
-block = compile5a_layer(layer)
-print(compile7_block(block))
+stack = import_module(argv[1]).stack
+print(compile7_block(compile5a_layer(stack.tcp.layer)))

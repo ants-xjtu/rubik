@@ -9,12 +9,10 @@ from weaver.lang import (
     make_psm_state,
     Else,
     Sequence,
-    Predefined,
     PSM,
     Predicate,
-    Assemble,
+    # Assemble,
     NoData,
-    Slice,
 )
 
 
@@ -66,7 +64,7 @@ class tcp_SACK_permitted(layout):
 class tcp_SACK(layout):
     SACK_type = Bit(8, const=5)
     SACK_len = Bit(8)
-    SACK_value = Bit((SACK_len - 2) * 8)
+    SACK_value = Bit((SACK_len - 2) << 3)
 
 
 class tcp_TS(layout):
@@ -85,7 +83,7 @@ class tcp_cc_new(layout):
 class tcp_blank(layout):
     blank_type = Bit(8)
     blank_len = Bit(8)
-    blank_value = Bit((blank_len - 2) * 8)
+    blank_value = Bit((blank_len - 2) << 3)
 
 
 class tcp_data(layout):
@@ -95,8 +93,8 @@ class tcp_data(layout):
     passive_wscale = Bit(32, init=0)
     active_wsize = Bit(32, init=(1 << 32) - 1)
     passive_wsize = Bit(32, init=(1 << 32) - 1)
-    fin_seq1 = Bit(32)
-    fin_seq2 = Bit(32)
+    fin_seq1 = Bit(32, init=0)
+    fin_seq2 = Bit(32, init=0)
 
 
 class tcp_temp(layout):
@@ -108,22 +106,20 @@ class tcp_temp(layout):
 def tcp_parser(ip):
     tcp = ConnectionOriented()
 
-    tcp.header = tcp_hdr + (
-        If(tcp.cursor < tcp.header.hdr_len << 2)
-        >> AnyUntil(
-            [
-                tcp_eol,
-                tcp_nop,
-                tcp_mss,
-                tcp_ws,
-                tcp_SACK_permitted,
-                tcp_SACK,
-                tcp_TS,
-                tcp_cc_new,
-                tcp_blank,
-            ],
-            (tcp.cursor < (tcp.header.hdr_len << 2)) & (tcp.cursor < tcp.payload_len),
-        )
+    tcp.header = tcp_hdr
+    tcp.header += If(tcp.cursor < tcp.header.hdr_len << 2) >> AnyUntil(
+        [
+            tcp_eol,
+            tcp_nop,
+            tcp_mss,
+            tcp_ws,
+            tcp_SACK_permitted,
+            tcp_SACK,
+            tcp_TS,
+            tcp_cc_new,
+            tcp_blank,
+        ],
+        (tcp.cursor < tcp.header.hdr_len << 2) & (tcp.payload_len != 0),
     )
 
     tcp.selector = (
@@ -204,30 +200,30 @@ def tcp_parser(ip):
     tcp.psm.hs2 = (SYN_SENT >> SYN_RCV) + Predicate(
         (tcp.to_active == 1) & (tcp.header.syn == 1) & (tcp.header.ack == 1)
     )
-    tcp.psm.hs3 = (SYN_RCV >> EST) + Predicate(tcp.v.header.ack == 1)
+    # tcp.psm.hs3 = (SYN_RCV >> EST) + Predicate(tcp.v.header.ack == 1)
 
-    tcp.psm.buffering = (EST >> EST) + Predicate(tcp.header.fin == 0)
+    # tcp.psm.buffering = (EST >> EST) + Predicate(tcp.header.fin == 0)
 
-    tcp.psm.wv1 = (EST >> FIN_WAIT_1) + Predicate(tcp.v.header.fin == 1)
-    tcp.psm.wv2 = (FIN_WAIT_1 >> CLOSE_WAIT) + Predicate(
-        (tcp.v.header.ack == 1)
-        & (tcp.v.header.fin == 0)
-        & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
-    )
-    tcp.psm.wv2_fast = (FIN_WAIT_1 >> LAST_ACK) + Predicate(
-        (tcp.v.header.ack == 1)
-        & (tcp.v.header.fin == 1)
-        & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
-    )
-    tcp.psm.wv3 = (CLOSE_WAIT >> LAST_ACK) + Predicate(tcp.v.header.fin == 1)
-    tcp.psm.wv4 = (LAST_ACK >> TERMINATE) + Predicate(
-        (tcp.v.header.ack == 1) & (tcp.perm.fin_seq2 + 1 == tcp.v.header.ack_num)
-    )
+    # tcp.psm.wv1 = (EST >> FIN_WAIT_1) + Predicate(tcp.v.header.fin == 1)
+    # tcp.psm.wv2 = (FIN_WAIT_1 >> CLOSE_WAIT) + Predicate(
+    #     (tcp.v.header.ack == 1)
+    #     & (tcp.v.header.fin == 0)
+    #     & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
+    # )
+    # tcp.psm.wv2_fast = (FIN_WAIT_1 >> LAST_ACK) + Predicate(
+    #     (tcp.v.header.ack == 1)
+    #     & (tcp.v.header.fin == 1)
+    #     & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
+    # )
+    # tcp.psm.wv3 = (CLOSE_WAIT >> LAST_ACK) + Predicate(tcp.v.header.fin == 1)
+    # tcp.psm.wv4 = (LAST_ACK >> TERMINATE) + Predicate(
+    #     (tcp.v.header.ack == 1) & (tcp.perm.fin_seq2 + 1 == tcp.v.header.ack_num)
+    # )
 
-    for i, state in enumerate(tcp.psm.states()):
-        setattr(
-            tcp.psm, f"rst{i}", (state >> TERMINATE) + Predicate(tcp.header.rst == 1)
-        )
+    # for i, state in enumerate(tcp.psm.states()):
+    #     setattr(
+    #         tcp.psm, f"rst{i}", (state >> TERMINATE) + Predicate(tcp.header.rst == 1)
+    #     )
 
-    tcp.event.asm = If(tcp.psm.buffering) >> Assemble()
+    # tcp.event.asm = If(tcp.psm.buffering) >> Assemble()
     return tcp

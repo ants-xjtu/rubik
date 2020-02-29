@@ -9,9 +9,9 @@ def indent_join(text_list):
 
 
 def code_comment(text, comment):
-    return f"// {comment}\n{text}"
+    return "// " + comment.replace("\n", "\n// ") + f"\n{text}"
 
 
 def comment_only(comment):
-    return f"// LOGICALLY {comment}"
+    return f"// LOGICALLY " + comment.replace("\n", "\n// ")
 

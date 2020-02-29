@@ -1,4 +1,13 @@
-from weaver.lang import Connectionless, layout, Bit, Assign, Sequence
+from weaver.lang import (
+    Connectionless,
+    layout,
+    Bit,
+    Assign,
+    Sequence,
+    PSM,
+    PSMState,
+    Predicate,
+)
 
 
 class ethernet_hdr(layout):
@@ -43,19 +52,19 @@ def ip_parser():
 
     ip.seq = Sequence(meta=ip.temp.offset, data=ip.payload[: ip.temp.length])
 
-    # DUMP = PSMState(start=True, accept=True)
-    # FRAG = PSMState()
-    # ip.psm = PSM(DUMP, FRAG)
-    # ip.psm.dump = (DUMP >> DUMP) + Predicate(
-    #     ip.header.dont_frag
-    #     | (
-    #         (ip.header.dont_frag == 0)
-    #         & (ip.header.more_frag == 0)
-    #         & (ip.temp.offset == 0)
-    #     )
-    # )
-    # ip.psm.frag = (DUMP >> FRAG) + Predicate(ip.header.more_frag)
-    # ip.psm.more = (FRAG >> FRAG) + Predicate(ip.header.more_frag)
+    DUMP = PSMState(start=True, accept=True)
+    FRAG = PSMState()
+    ip.psm = PSM(DUMP, FRAG)
+    ip.psm.dump = (DUMP >> DUMP) + Predicate(
+        (ip.header.dont_frag == 1)
+        | (
+            (ip.header.dont_frag == 0)
+            & (ip.header.more_frag == 0)
+            & (ip.temp.offset == 0)
+        )
+    )
+    ip.psm.frag = (DUMP >> FRAG) + Predicate(ip.header.more_frag == 1)
+    ip.psm.more = (FRAG >> FRAG) + Predicate(ip.header.more_frag == 1)
     # ip.psm.last = (FRAG >> DUMP) + Predicate(ip.v.header.more_frag == 0)
 
     # ip_complete = ip.psm.dump | ip.psm.last
