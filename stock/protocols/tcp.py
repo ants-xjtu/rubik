@@ -10,8 +10,8 @@ from weaver.lang import (
     Else,
     Sequence,
     PSM,
-    Predicate,
-    # Assemble,
+    Pred,
+    Assemble,
     NoData,
 )
 
@@ -134,16 +134,11 @@ def tcp_parser(ip):
     SYN_SENT, SYN_RCV, EST, FIN_WAIT_1, CLOSE_WAIT, LAST_ACK = make_psm_state(6)
     TERMINATE = PSMState(accept=True)
 
-    tcp.preprocess = If(tcp.header.ack == 1) >> Assign(
-        tcp.temp.data_len, tcp.payload_len
+    tcp.prep = If(tcp.header.ack == 1) >> Assign(tcp.temp.data_len, tcp.payload_len)
+    tcp.prep = (
+        If(tcp.header.syn == 1) >> Assign(tcp.temp.data_len, 1) >> Else() >> tcp.prep
     )
-    tcp.preprocess = (
-        If(tcp.header.syn == 1)
-        >> Assign(tcp.temp.data_len, 1)
-        >> Else()
-        >> tcp.preprocess
-    )
-    tcp.preprocess = (
+    tcp.prep = (
         If(tcp.header.fin == 1)
         >> Assign(tcp.temp.data_len, tcp.payload_len + 1)
         + (
@@ -153,7 +148,7 @@ def tcp_parser(ip):
             >> Assign(tcp.perm.fin_seq2, tcp.header.seq_num)
         )
         >> Else()
-        >> tcp.preprocess
+        >> tcp.prep
     )
 
     def update_wnd(oppo_lwnd, oppo_wscale, oppo_wsize, cur_lwnd, cur_wscale, cur_wsize):
@@ -164,7 +159,7 @@ def tcp_parser(ip):
         x += Assign(tcp.temp.wnd_size, cur_wsize << cur_wscale)
         return x
 
-    tcp.preprocess += If(tcp.to_active == 1) >> update_wnd(
+    tcp.prep += If(tcp.to_active == 1) >> update_wnd(
         tcp.perm.passive_lwnd,
         tcp.perm.passive_wscale,
         tcp.perm.passive_wsize,
@@ -172,7 +167,7 @@ def tcp_parser(ip):
         tcp.perm.active_wscale,
         tcp.perm.active_wsize,
     )
-    tcp.preprocess += If(tcp.to_passive == 1) >> update_wnd(
+    tcp.prep += If(tcp.to_passive == 1) >> update_wnd(
         tcp.perm.active_lwnd,
         tcp.perm.active_wscale,
         tcp.perm.active_wsize,
@@ -193,37 +188,37 @@ def tcp_parser(ip):
         CLOSED, SYN_SENT, SYN_RCV, EST, FIN_WAIT_1, CLOSE_WAIT, LAST_ACK, TERMINATE
     )
 
-    tcp.psm.fake = (CLOSED >> TERMINATE) + Predicate(tcp.header.syn == 0)
-    tcp.psm.hs1 = (CLOSED >> SYN_SENT) + Predicate(
+    tcp.psm.fake = (CLOSED >> TERMINATE) + Pred(tcp.header.syn == 0)
+    tcp.psm.hs1 = (CLOSED >> SYN_SENT) + Pred(
         (tcp.header.syn == 1) & (tcp.header.ack == 0)
     )
-    tcp.psm.hs2 = (SYN_SENT >> SYN_RCV) + Predicate(
+    tcp.psm.hs2 = (SYN_SENT >> SYN_RCV) + Pred(
         (tcp.to_active == 1) & (tcp.header.syn == 1) & (tcp.header.ack == 1)
     )
-    # tcp.psm.hs3 = (SYN_RCV >> EST) + Predicate(tcp.v.header.ack == 1)
+    tcp.psm.hs3 = (SYN_RCV >> EST) + Pred(tcp.v.header.ack == 1)
 
-    # tcp.psm.buffering = (EST >> EST) + Predicate(tcp.header.fin == 0)
+    tcp.psm.buffering = (EST >> EST) + Pred(tcp.header.fin == 0)
 
-    # tcp.psm.wv1 = (EST >> FIN_WAIT_1) + Predicate(tcp.v.header.fin == 1)
-    # tcp.psm.wv2 = (FIN_WAIT_1 >> CLOSE_WAIT) + Predicate(
-    #     (tcp.v.header.ack == 1)
-    #     & (tcp.v.header.fin == 0)
-    #     & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
-    # )
-    # tcp.psm.wv2_fast = (FIN_WAIT_1 >> LAST_ACK) + Predicate(
-    #     (tcp.v.header.ack == 1)
-    #     & (tcp.v.header.fin == 1)
-    #     & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
-    # )
-    # tcp.psm.wv3 = (CLOSE_WAIT >> LAST_ACK) + Predicate(tcp.v.header.fin == 1)
-    # tcp.psm.wv4 = (LAST_ACK >> TERMINATE) + Predicate(
-    #     (tcp.v.header.ack == 1) & (tcp.perm.fin_seq2 + 1 == tcp.v.header.ack_num)
-    # )
+    tcp.psm.wv1 = (EST >> FIN_WAIT_1) + Pred(tcp.v.header.fin == 1)
+    tcp.psm.wv2 = (FIN_WAIT_1 >> CLOSE_WAIT) + Pred(
+        (tcp.v.header.ack == 1)
+        & (tcp.v.header.fin == 0)
+        & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
+    )
+    tcp.psm.wv2_fast = (FIN_WAIT_1 >> LAST_ACK) + Pred(
+        (tcp.v.header.ack == 1)
+        & (tcp.v.header.fin == 1)
+        & (tcp.perm.fin_seq1 + 1 == tcp.v.header.ack_num)
+    )
+    tcp.psm.wv3 = (CLOSE_WAIT >> LAST_ACK) + Pred(tcp.v.header.fin == 1)
+    tcp.psm.wv4 = (LAST_ACK >> TERMINATE) + Pred(
+        (tcp.v.header.ack == 1) & (tcp.perm.fin_seq2 + 1 == tcp.v.header.ack_num)
+    )
 
-    # for i, state in enumerate(tcp.psm.states()):
-    #     setattr(
-    #         tcp.psm, f"rst{i}", (state >> TERMINATE) + Predicate(tcp.header.rst == 1)
-    #     )
+    for i, state in enumerate(tcp.psm.states()):
+        setattr(
+            tcp.psm, f"rst{i}", (state >> TERMINATE) + Pred(tcp.header.rst == 1)
+        )
 
-    # tcp.event.asm = If(tcp.psm.buffering) >> Assemble()
+    tcp.event.asm = If(tcp.psm.buffering) >> Assemble()
     return tcp
