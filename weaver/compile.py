@@ -117,14 +117,7 @@ class LayerContext:
 
     @property
     def search_expr6(self):
-        return "\n".join(
-            [
-                f"tommy_hashdyn_search(",
-                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k,",
-                f"  hash(&{self.prealloc_expr6}->k, sizeof(L{self.layer_id}K))",
-                ")",
-            ]
-        )
+        return self.hash_action_stat7_impl("search", "")
 
     @property
     def insert_stat7(self):
@@ -143,6 +136,24 @@ class LayerContext:
                 ");",
             ]
         )
+
+    def hash_action_stat7_impl(self, action, postfix):
+        return "\n".join(
+            [
+                f"tommy_hashdyn_{action}(",
+                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k{postfix},",
+                f"  hash(&{self.prealloc_expr6}->k{postfix}, sizeof(L{self.layer_id}K))",
+                ");",
+            ]
+        )
+
+    @property
+    def remove_stat7(self):
+        return self.hash_action_stat7_impl("remove", "")
+
+    @property
+    def remove_rev_stat7(self):
+        return self.hash_action_stat7_impl("remove", "_rev")
 
     @property
     def content_expr6(self):
@@ -379,7 +390,6 @@ def compile2_perm_layout(layout, context):
 
 def compile2_seq(seq, context):
     context.zero_based = seq.zero_based
-    context.buffer_data = seq.buffer_data
 
 
 def compile4_const(value):
@@ -449,7 +459,7 @@ def compile5_assemble(context):
     return [
         UpdateReg(
             StackContext.SEQUENCE,
-            Eval1Abstract(),
+            Expr(set(), Eval1Abstract(), None),
             True,
             code_comment(
                 f"{context.content_expr6} = "
@@ -663,6 +673,7 @@ class Inst:
         self.prefetch = PrefetchInst
         self.fetch = FetchInst
         self.create = CreateInst
+        self.destroy = DestroyInst
 
     def compile5(self, context):
         return compile5_inst(self, context)
@@ -799,6 +810,7 @@ class BiInst:
         self.prefetch = PrefetchInst  # same as Inst
         self.create = CreateBiInst
         self.fetch = FetchBiInst
+        self.destroy = DestroyBiInst
         self.to_active = to_active
 
     def compile5(self, context):
@@ -876,6 +888,30 @@ class CreateBiInst:
         )
 
 
+class DestroyBiInst:
+    def __init__(self, context):
+        self.compile7 = "\n".join(
+            [
+                context.remove_stat7,
+                context.remove_rev_stat7,
+                f"WV_CleanSeq(&{context.inst_expr6}->seq, {context.buffer_data});",
+                f"WV_CleanSeq(&{context.inst_expr6}->seq_rev, {context.buffer_data});",
+                f"WV_Free({context.inst_expr6});",
+            ]
+        )
+
+
+class DestroyInst:
+    def __init__(self, context):
+        self.compile7 = "\n".join(
+            [
+                context.remove_stat7,
+                f"WV_CleanSeq(&{context.inst_expr6}->seq, {context.buffer_data});",
+                f"WV_Free({context.inst_expr6});",
+            ]
+        )
+
+
 def compile2_expr(expr, context):
     if expr.virtual:
         vexpr_var = InstVar(1, ConstExpr(0))
@@ -932,7 +968,7 @@ def compile3a_prototype(prototype, stack, layer_id):
         prototype.prep,
         prototype.seq,
         prototype.psm,
-        None,
+        prototype.event.clone(),
     )
 
 
@@ -947,6 +983,7 @@ class Layer:
         self.seq = seq
         self.psm = psm
         self.event = event
+        self.next_list = []
 
 
 def compile5a_layer(layer):
@@ -959,7 +996,68 @@ def compile5a_layer(layer):
         instr_list += compile5_seq(layer.seq, layer.context)
     if layer.psm is not None:
         instr_list += layer.psm.compile0().compile5(layer.context)
+
+    event_var_map = {}
+    for name, event in layer.event.name_map.items():
+        var = AutoVar(1)
+        layer.context.alloc_temp_reg(var, f"event<{name}>")
+        event_var_map[event] = var
+    instr_list += layer.event.compile0(event_var_map).compile5(layer.context)
+
+    next_list5 = compile5_next_list(layer.next_list, layer.context)
+    accept_list5 = next_list5
+    if layer.context.inst is not None:
+        accept_list5 += [
+            UpdateReg(
+                StackContext.INSTANCE,
+                Expr(set(), Eval1Abstract(), None),
+                True,
+                layer.context.inst.destroy(layer.context).compile7,
+            )
+        ]
+
+    if layer.psm is not None:
+        accept_list5 = [
+            Branch(
+                layer.psm.compile0_accept_pred().compile4(layer.context),
+                accept_list5,
+                [],
+            )
+        ]
+    instr_list += accept_list5
+
     return Block(instr_list, None, None, None)
+
+
+def compile5_next_list(next_list, context):
+    stats = []
+    for pred, dst_layer in next_list:
+        stats += [
+            Branch(
+                pred.compile4(context),
+                [
+                    UpdateReg(
+                        StackContext.RUNTIME,
+                        Expr(set(), Eval1Abstract(), None),
+                        True,
+                        code_comment(
+                            "\n".join(
+                                [
+                                    "b%%BLOCK_ID%%_t = return_target;",
+                                    "return_target = %%BLOCK_ID%%;",
+                                    f"goto L{dst_layer.context.layer_id};",
+                                    "B%%BLOCK_ID%%_R:",
+                                    "return_target = b%%BLOCK_ID%%_t;",
+                                ]
+                            ),
+                            f"jump to next layer #{dst_layer.context.layer_id}",
+                        ),
+                    )
+                ],
+                [],
+            )
+        ]
+    return stats
 
 
 def compile5_scanner(scanner, context):
@@ -983,8 +1081,8 @@ def compile5_scanner(scanner, context):
             for reg in context.stack.struct_map[struct]
         ],
         UpdateReg(
-            StackContext.HEADER,
-            Expr(set(), Eval1Abstract(), None),
+            StackContext.SEQUENCE,
+            Expr({StackContext.HEADER}, Eval1Abstract(), None),
             False,
             code_comment(f"{context.content_expr6} = current;", "set SDU to payload"),
         ),

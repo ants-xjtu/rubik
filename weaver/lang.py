@@ -384,18 +384,11 @@ class NoData(SliceOpMixin):
 
 class Sequence:
     def __init__(
-        self,
-        meta,
-        data,
-        zero_based=True,
-        buffer_data=True,
-        data_len=Const(0),
-        window=None,
+        self, meta, data, zero_based=True, data_len=Const(0), window=None,
     ):
         self.offset = meta
         self.data = data
         self.zero_based = zero_based
-        self.buffer_data = buffer_data
         self.takeup = data_len
         if window is None:
             self.window_left = self.window_right = Const(0)
@@ -406,7 +399,6 @@ class Sequence:
 class Stack(NameMapMixin):
     def __init__(self, name_map=None, next_map=None):
         self.name_map = name_map or {}
-        self.next_map = next_map or {}
         self.context = StackContext()
         self.layer_count = 0
         super().__init__()
@@ -414,11 +406,10 @@ class Stack(NameMapMixin):
     def handle_set(self, prototype):
         layer = Layer(prototype, self.context, self.layer_count)
         self.layer_count += 1
-        self.next_map[layer] = []
         return layer
 
     def __iadd__(self, dir_pred):
-        self.next_map[dir_pred.src].append((dir_pred.pred, dir_pred.dst))
+        dir_pred.src.layer.next_list.append((dir_pred.pred, dir_pred.dst.layer))
         return self
 
 
@@ -445,7 +436,7 @@ class ForeignNameMap(NameMapMixin):
         return ForeignVar(self.context.query(var))
 
 
-class ForeignVar:
+class ForeignVar(UniversalNumberOpMixin):
     def __init__(self, reg):
         self.reg = reg
         self.virtual = False
@@ -522,7 +513,7 @@ class PSM(NameMapMixin):
                 state.state_id = state_count
                 state_count += 1
             if state.accept:
-                self.accept_list.append(state)
+                self.accept_list.append(state.state_id)
             self.state_map[state.state_id] = []
         self.state_list = states
         super().__init__()
@@ -570,6 +561,12 @@ class PSM(NameMapMixin):
             )
         return action
 
+    def compile0_accept_pred(self):
+        pred = Const(0)
+        for state_id in self.accept_list:
+            pred = (self.prototype.current_state == state_id) | pred
+        return pred
+
 
 class PSMTrans:
     def __init__(self, pred, dst_state, action):
@@ -583,6 +580,7 @@ class EventGroup(NameMapMixin):
         self.name_map = name_map
         self.cause_map = cause_map
         self.before_map = before_map
+        super().__init__()
 
     def __iadd__(self, relation):
         if isinstance(relation, tuple):
@@ -594,8 +592,35 @@ class EventGroup(NameMapMixin):
 
     def handle_set(self, if_stat):
         event = Event(if_stat.pred, if_stat.yes_action)
-        self.cause_map[event] = self.before_map[event] = set()
+        self.cause_map[event] = set()
+        self.before_map[event] = set()
         return event
+
+    def clone(self):
+        return EventGroup(
+            dict(self.name_map), dict(self.cause_map), dict(self.before_map)
+        )
+
+    def compile0(self, event_var_map):
+        action = Action([])
+        for var in event_var_map.values():
+            action += Assign(var, 0)
+        event_set = set(self.name_map.values())
+        while event_set != set():
+            free_event = next(
+                event
+                for event in event_set
+                if not any(
+                    before_event in event_set
+                    for before_event in self.before_map[event] | self.cause_map[event]
+                )
+            )
+            action += free_event.compile0(
+                event_var_map[free_event],
+                {event_var_map[event] for event in self.cause_map[free_event]},
+            )
+            event_set.remove(free_event)
+        return action
 
 
 class Event:
@@ -605,6 +630,12 @@ class Event:
 
     def __rshift__(self, other):
         return Direction(self, other)
+
+    def compile0(self, event_var, cause_vars):
+        action = If(self.pred) >> (Assign(event_var, 1) + self.action)
+        for var in cause_vars:
+            action = If(var == 1) >> action
+        return action
 
 
 # Op
