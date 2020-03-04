@@ -50,14 +50,15 @@ class LayerContext:
     def __init__(self, layer_id, stack):
         self.layer_id = layer_id
         self.stack = stack
-        self.var_map = {}  # var(aka bit) -> reg(aka int)
+        self.var_map = {}  # var(aka Bit/AutoVar/InstVar) -> reg(aka int)
         self.structs = set()
         self.inst = None
         self.perm_regs = []
         self.buffer_data = False
         self.zero_based = None
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
-        self.vexpr_map = {}  # <someone impl compile4>(aka expr) -> reg(aka int)
+        self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
+        self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -216,6 +217,15 @@ class InstVar:
             return InstVar(bit.length // 8, bit.init, bit.var_id)
 
 
+# ConstExpr is duplicated with weaver.lang.Const
+# Const is for interface and used directly by user
+# ConstExpr is for compilation and used internally by compiler
+# weaver.lang should not import ConstExpr because ConstExpr is "pure" and is defined without
+# necessary DSL features such as NumberOpMixin
+# weaver.compile also should not import Const because it is a one-way import design
+# is there any better solution?
+# p.s. similiar problem raises on AutoVar/TempVar vs. Bit
+# p.s. some compile0_XX methods defined in weaver.lang are also related to this problem
 class ConstExpr:
     def __init__(self, value):
         self.value = value
@@ -601,7 +611,7 @@ def compile4_header_contain(layout, context):
         Eval1Abstract(),
         (
             f"{context.stack.reg_map[context.layout_map[layout]].expr6} == 1",
-            f"<layout {layout.__name__} is parsed>",
+            f"<layout {layout.debug_name} is parsed>",
         ),
     )
 
@@ -937,7 +947,7 @@ def compile2_psm(psm, context):
         compile2_action(trans.action, context)
 
 
-def compile3a_prototype(prototype, stack, layer_id):
+def compile3a_prototype(prototype, stack, layer_id, extra_event):
     context = LayerContext(layer_id, stack)
     scanner = prototype.header.compile1(context)
 
@@ -950,7 +960,6 @@ def compile3a_prototype(prototype, stack, layer_id):
     if prototype.seq is not None:
         compile2_seq(prototype.seq, context)
     if prototype.psm is not None:
-        prototype.psm.prototype = prototype
         context.alloc_inst_reg(InstVar.from_bit(prototype.current_state), "state")
         compile2_psm(prototype.psm, context)
 
@@ -962,31 +971,58 @@ def compile3a_prototype(prototype, stack, layer_id):
     return Layer(
         context,
         scanner,
+        prototype.current_state,
         prototype.header,
         prototype.temp,
         prototype.perm,
         prototype.prep,
         prototype.seq,
         prototype.psm,
-        prototype.event.clone(),
+        prototype.event,
+        extra_event,
     )
 
 
 class Layer:
-    def __init__(self, context, scanner, header, temp, perm, general, seq, psm, event):
+    def __init__(
+        self,
+        context,
+        scanner,
+        state_var,
+        header,
+        temp,
+        perm,
+        general,
+        seq,
+        psm,
+        prototype_event,
+        event,
+    ):
         self.context = context
         self.header = header
         self.temp = temp
         self.perm = perm
         self.scanner = scanner
+        self.state_var = state_var
         self.general = general
         self.seq = seq
         self.psm = psm
+        self.prototype_event = prototype_event
         self.event = event
         self.next_list = []
 
 
+def compile2_event_group(event_group, context):
+    for name, event in event_group.name_map.items():
+        var = AutoVar(1)
+        context.alloc_temp_reg(var, f"event<{name}>")
+        context.event_map[event] = var
+
+
 def compile5a_layer(layer):
+    compile2_event_group(layer.prototype_event, layer.context)
+    compile2_event_group(layer.event, layer.context)
+
     instr_list = compile5_scanner(layer.scanner, layer.context)
     if layer.context.inst is not None:
         instr_list += layer.context.inst.compile5(layer.context)
@@ -995,38 +1031,59 @@ def compile5a_layer(layer):
     if layer.seq is not None:
         instr_list += compile5_seq(layer.seq, layer.context)
     if layer.psm is not None:
-        instr_list += layer.psm.compile0().compile5(layer.context)
+        instr_list += layer.psm.compile0(layer.state_var).compile5(layer.context)
 
-    event_var_map = {}
-    for name, event in layer.event.name_map.items():
-        var = AutoVar(1)
-        layer.context.alloc_temp_reg(var, f"event<{name}>")
-        event_var_map[event] = var
+    # the more "canonical" way to compile events is:
+    # 0. context.event_map should store reg(aka int) as values, compile2_event_group should be
+    #    implemented accordingly
+    # 1. implement compile4_event_var function, which accesses context.event_map and generate
+    #    weaver.prog.Expr with corresponding register like compile2_var
+    # 2. create EventVar interface in weaver.lang and implement compile4 with above function
+    # 3. implement compile0 method of EventGroup, which generate Action including `EventVar`s
+    # do so if necessary
+    event_var_map = {
+        event: layer.context.event_map[event]
+        for event in [
+            *layer.prototype_event.name_map.values(),
+            *layer.event.name_map.values(),
+        ]
+    }
+    instr_list += [
+        UpdateReg(
+            layer.context.query(var),
+            compile4_const(0),
+            False,
+            f"{layer.context.stack.reg_map[layer.context.query(var)].expr6} = 0;",
+        )
+        for var in event_var_map.values()
+    ]
+    instr_list += layer.prototype_event.compile0(event_var_map).compile5(layer.context)
     instr_list += layer.event.compile0(event_var_map).compile5(layer.context)
+    instr_list += compile5_finalize(layer, layer.context)
+    return Block(instr_list, None, None, None)
 
-    next_list5 = compile5_next_list(layer.next_list, layer.context)
+
+def compile5_finalize(layer, context):
+    next_list5 = compile5_next_list(layer.next_list, context)
     accept_list5 = next_list5
-    if layer.context.inst is not None:
+    if context.inst is not None:
         accept_list5 += [
             UpdateReg(
                 StackContext.INSTANCE,
                 Expr(set(), Eval1Abstract(), None),
                 True,
-                layer.context.inst.destroy(layer.context).compile7,
+                context.inst.destroy(layer.context).compile7,
             )
         ]
-
     if layer.psm is not None:
         accept_list5 = [
             Branch(
-                layer.psm.compile0_accept_pred().compile4(layer.context),
+                layer.psm.compile0_accept_pred(layer.state_var).compile4(context),
                 accept_list5,
                 [],
             )
         ]
-    instr_list += accept_list5
-
-    return Block(instr_list, None, None, None)
+    return accept_list5
 
 
 def compile5_next_list(next_list, context):
@@ -1123,4 +1180,3 @@ def compile5_seq(seq, context):
             ),
         )
     ]
-

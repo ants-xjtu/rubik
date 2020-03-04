@@ -179,14 +179,10 @@ class AnyUntil(HeaderActionOpMixin, NameMapMixin):
         return compile1_any_until(self, context)
 
 
-class perm_fallback(layout):
-    pass
-
-
 class Prototype:
     def __init__(self):
         self.header = self.selector = self.temp = self.prep = self.seq = self.psm = None
-        self.perm = perm_fallback
+        self.perm = None
         self.event = EventGroup({}, {}, {})
 
         self.payload = PayloadExpr()
@@ -252,10 +248,10 @@ class UniversalNumberOpMixin:
 # used by compounded expressions
 class NumberOpMixin(UniversalNumberOpMixin):
     def __and__(self, other):
-        return LogicalAndOp(self, other)
+        return LogicalAndOp(self, Const.wrap_int(other))
 
     def __or__(self, other):
-        return LogicalOrOp(self, other)
+        return LogicalOrOp(self, Const.wrap_int(other))
 
 
 class Bit(UniversalNumberOpMixin):
@@ -350,6 +346,11 @@ class Assemble(ActionOpMixin):
         pass
 
 
+class Call(ActionOpMixin):
+    def __init__(self, layout):
+        self.layout = layout
+
+
 # Only unsigned integer constants are initialized as Const
 # empty slice is the only slice constant that could be created currently
 class Const(UniversalNumberOpMixin):
@@ -415,12 +416,15 @@ class Stack(NameMapMixin):
 
 class Layer:
     def __init__(self, prototype, stack, layer_id):
-        self.layer = compile3a_prototype(prototype, stack, layer_id)
+        self.layer = compile3a_prototype(
+            prototype, stack, layer_id, EventGroup({}, {}, {})
+        )
         self.header = ForeignNameMap(self.layer.header, self.layer.context)
         if self.layer.temp is not None:
             self.temp = ForeignNameMap(self.layer.temp, self.layer.context)
         if self.layer.perm is not None:
             self.perm = ForeignNameMap(self.layer.perm, self.layer.context)
+        self.event = self.layer.event
 
     def __rshift__(self, dst_layer):
         return Direction(self, dst_layer)
@@ -501,7 +505,6 @@ class PSM(NameMapMixin):
         self.state_map = {}
 
         self.trans_var = Bit(16)
-        self.prototype = None
 
         state_count = 1
         for state in states:
@@ -531,23 +534,22 @@ class PSM(NameMapMixin):
     def handle_get(self, trans_id):
         return self.trans_var == trans_id
 
-    def compile0(self):
-        assert self.prototype is not None
+    def compile0(self, state):
         return Action(
             [
                 Assign(self.trans_var, 0),
                 *[
                     If(self.trans_var == 0)
                     >> (
-                        If(self.prototype.current_state == state_id)
-                        >> self.compile0_trans_list(trans_list)
+                        If(state == state_id)
+                        >> self.compile0_trans_list(trans_list, state)
                     )
                     for state_id, trans_list in self.state_map.items()
                 ],
             ]
         )
 
-    def compile0_trans_list(self, trans_list):
+    def compile0_trans_list(self, trans_list, state):
         action = Action([])
         for trans_id in trans_list:
             trans = self.trans_list[trans_id - 1]
@@ -555,16 +557,16 @@ class PSM(NameMapMixin):
                 If(trans.pred)
                 >> (
                     Assign(self.trans_var, trans_id)
-                    + Assign(self.prototype.current_state, trans.dst_state)
+                    + Assign(state, trans.dst_state)
                     + trans.action
                 )
             )
         return action
 
-    def compile0_accept_pred(self):
+    def compile0_accept_pred(self, state):
         pred = Const(0)
         for state_id in self.accept_list:
-            pred = (self.prototype.current_state == state_id) | pred
+            pred = (state == state_id) | pred
         return pred
 
 
@@ -596,15 +598,8 @@ class EventGroup(NameMapMixin):
         self.before_map[event] = set()
         return event
 
-    def clone(self):
-        return EventGroup(
-            dict(self.name_map), dict(self.cause_map), dict(self.before_map)
-        )
-
     def compile0(self, event_var_map):
         action = Action([])
-        for var in event_var_map.values():
-            action += Assign(var, 0)
         event_set = set(self.name_map.values())
         while event_set != set():
             free_event = next(
