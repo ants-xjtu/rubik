@@ -11,6 +11,7 @@ from weaver.compile import (
     compile1_if,
     compile2_if,
     compile2_action,
+    compile2_call,
     compile3a_prototype,
     compile4_const,
     compile4_op2,
@@ -26,6 +27,7 @@ from weaver.compile import (
     compile5_action,
     compile5_assemble,
     compile5_if,
+    compile5_call,
 )
 
 
@@ -100,7 +102,7 @@ class HeaderAction(NameMapMixin):
 
 class If:
     def __init__(self, pred):
-        self.pred = pred
+        self.pred = Const.wrap_int(pred)
 
     def __rshift__(self, action):
         return IfElse(self.pred, action, Action([]))
@@ -350,6 +352,12 @@ class Call(ActionOpMixin):
     def __init__(self, layout):
         self.layout = layout
 
+    def compile2(self, context):
+        return compile2_call(self, context)
+
+    def compile5(self, context):
+        return compile5_call(self, context)
+
 
 # Only unsigned integer constants are initialized as Const
 # empty slice is the only slice constant that could be created currently
@@ -425,6 +433,8 @@ class Layer:
         if self.layer.perm is not None:
             self.perm = ForeignNameMap(self.layer.perm, self.layer.context)
         self.event = self.layer.event
+        self.current_state = self.layer.state_var
+        self.sdu = prototype.sdu
 
     def __rshift__(self, dst_layer):
         return Direction(self, dst_layer)

@@ -59,6 +59,7 @@ class LayerContext:
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
         self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
+        self.call_struct = {}  # weaver.lang.Call -> struct ID (aka int)
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -644,6 +645,11 @@ class Eval1Abstract:
         raise NotConstant()
 
 
+# placeholder in UpdateReg which is command
+# command implements compile7 directly, so abstract_expr.compile6 should never be used
+abstract_expr = Expr(set(), Eval1Abstract(), None)
+
+
 class InstReg:
     def __init__(self, reg_id, layer_id, byte_length, initial_expr, debug_name):
         self.reg_id = reg_id
@@ -701,10 +707,7 @@ class Inst:
 def compile5_inst(inst, context):
     fetch_route = [
         UpdateReg(
-            StackContext.INSTANCE,
-            Expr(set(), Eval1Abstract(), None),
-            True,
-            inst.fetch(context).compile7,
+            StackContext.INSTANCE, abstract_expr, True, inst.fetch(context).compile7,
         ),
         *[
             UpdateReg(
@@ -735,10 +738,7 @@ def compile5_inst(inst, context):
         )
     create_route = [
         UpdateReg(
-            StackContext.INSTANCE,
-            Expr(set(), Eval1Abstract(), None),
-            True,
-            inst.create(context).compile7,
+            StackContext.INSTANCE, abstract_expr, True, inst.create(context).compile7,
         ),
         *init_stats,
         *inst.compile5_create_extra(context),
@@ -1018,6 +1018,9 @@ def compile2_event_group(event_group, context):
         context.alloc_temp_reg(var, f"event<{name}>")
         context.event_map[event] = var
 
+        compile2_expr(event.pred, context)
+        event.action.compile2(context)
+
 
 def compile5a_layer(layer):
     compile2_event_group(layer.prototype_event, layer.context)
@@ -1070,7 +1073,7 @@ def compile5_finalize(layer, context):
         accept_list5 += [
             UpdateReg(
                 StackContext.INSTANCE,
-                Expr(set(), Eval1Abstract(), None),
+                abstract_expr,
                 True,
                 context.inst.destroy(layer.context).compile7,
             )
@@ -1095,7 +1098,7 @@ def compile5_next_list(next_list, context):
                 [
                     UpdateReg(
                         StackContext.RUNTIME,
-                        Expr(set(), Eval1Abstract(), None),
+                        abstract_expr,
                         True,
                         code_comment(
                             "\n".join(
@@ -1121,7 +1124,7 @@ def compile5_scanner(scanner, context):
     return [
         UpdateReg(
             StackContext.HEADER,
-            Expr(set(), Eval1Abstract(), None),
+            abstract_expr,
             True,
             "\n".join(action.compile7 for action in scanner),
         ),
@@ -1180,3 +1183,28 @@ def compile5_seq(seq, context):
             ),
         )
     ]
+
+
+def compile2_call(call, context):
+    for name, field in call.layout.name_map.items():
+        context.alloc_header_reg(field, call.layout.debug_name + "." + name)
+    struct_id = context.finalize_struct()
+    context.call_struct[call] = struct_id
+
+
+def compile5_call(call, context):
+    return [
+        UpdateReg(
+            StackContext.RUNTIME,
+            Expr(
+                set(context.stack.struct_map[context.call_struct[call]]),
+                Eval1Abstract(),
+                None,
+            ),
+            False,
+            f"{call.layout.debug_name}("
+            f"{compile6_struct_expr(context.call_struct[call])}, "
+            f"{context.inst_expr6}->user_data);",
+        )
+    ]
+
