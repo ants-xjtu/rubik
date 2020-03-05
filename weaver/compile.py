@@ -33,6 +33,7 @@ different to other functions in compile3 and compile5 families
 """
 
 from weaver.prog import Expr, UpdateReg, Branch, NotConstant, Block
+from weaver.compile2 import compile7_decl_inst, compile7_decl_bi_inst
 from weaver.util import code_comment, comment_only, indent_join
 
 
@@ -44,6 +45,7 @@ class StackContext:
         self.struct_count = 0
         self.reg_map = {}  # reg(aka int) -> HeaderReg/TempReg/InstReg
         self.struct_map = {}  # struct(aka int) -> [reg(aka int)]
+        self.call_struct = {}  # weaver.lang.Call -> struct ID (aka int)
 
 
 class LayerContext:
@@ -59,7 +61,6 @@ class LayerContext:
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
         self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
-        self.call_struct = {}  # weaver.lang.Call -> struct ID (aka int)
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -690,6 +691,7 @@ class Inst:
         self.fetch = FetchInst
         self.create = CreateInst
         self.destroy = DestroyInst
+        self.decl = DeclInst
 
     def compile5(self, context):
         return compile5_inst(self, context)
@@ -768,6 +770,11 @@ def compile5_inst(inst, context):
     ]
 
 
+class DeclInst:
+    def __init__(self, context):
+        self.compile7 = compile7_decl_inst(context.inst, context)
+
+
 class FetchInst:
     def __init__(self, context):
         self.compile7 = code_comment(
@@ -821,6 +828,7 @@ class BiInst:
         self.create = CreateBiInst
         self.fetch = FetchBiInst
         self.destroy = DestroyBiInst
+        self.decl = DeclBiInst
         self.to_active = to_active
 
     def compile5(self, context):
@@ -859,6 +867,11 @@ class BiInst:
 
 def compile2_bi_inst(bi_inst, context):
     context.alloc_temp_reg(bi_inst.to_active, "to_active")
+
+
+class DeclBiInst:
+    def __init__(self, context):
+        self.compile7 = compile7_decl_bi_inst(context.inst, context)
 
 
 class FetchBiInst:
@@ -1189,7 +1202,7 @@ def compile2_call(call, context):
     for name, field in call.layout.name_map.items():
         context.alloc_header_reg(field, call.layout.debug_name + "." + name)
     struct_id = context.finalize_struct()
-    context.call_struct[call] = struct_id
+    context.stack.call_struct[call] = struct_id
 
 
 def compile5_call(call, context):
@@ -1197,13 +1210,13 @@ def compile5_call(call, context):
         UpdateReg(
             StackContext.RUNTIME,
             Expr(
-                set(context.stack.struct_map[context.call_struct[call]]),
+                set(context.stack.struct_map[context.stack.call_struct[call]]),
                 Eval1Abstract(),
                 None,
             ),
             False,
             f"{call.layout.debug_name}("
-            f"{compile6_struct_expr(context.call_struct[call])}, "
+            f"{compile6_struct_expr(context.stack.call_struct[call])}, "
             f"{context.inst_expr6}->user_data);",
         )
     ]
