@@ -120,7 +120,7 @@ class LayerContext:
 
     @property
     def search_expr6(self):
-        return self.hash_action_stat7_impl("search", "")
+        return self.hash_action_expr6_impl("search", "")
 
     @property
     def insert_stat7(self):
@@ -140,15 +140,18 @@ class LayerContext:
             ]
         )
 
-    def hash_action_stat7_impl(self, action, postfix):
+    def hash_action_expr6_impl(self, action, postfix):
         return "\n".join(
             [
                 f"tommy_hashdyn_{action}(",
                 f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k{postfix},",
                 f"  hash(&{self.prealloc_expr6}->k{postfix}, sizeof(L{self.layer_id}K))",
-                ");",
+                ")",
             ]
         )
+
+    def hash_action_stat7_impl(self, action, postfix):
+        return self.hash_action_expr6_impl(action, postfix) + ";"
 
     @property
     def remove_stat7(self):
@@ -250,7 +253,7 @@ class LocateStruct:
     def __init__(self, struct_id, struct_length, parsed_reg):
         self.compile7 = "\n".join(
             [
-                f"{compile6_struct_expr(struct_id)} = (WV_Any)current;",
+                f"{compile6_struct_expr(struct_id)} = (WV_Any)current.cursor;",
                 f"current = WV_SliceAfter(current, {struct_length});",
                 f"{parsed_reg.expr6} = 1;",
             ]
@@ -261,7 +264,7 @@ class CoverSlice:
     def __init__(self, slice_reg, parsed_reg):
         self.compile7 = "\n".join(
             [
-                f"{slice_reg.expr6}.cursor = current;",
+                f"{slice_reg.expr6}.cursor = current.cursor;",
                 f"{slice_reg.expr6}.length = {slice_reg.length_expr4.compile6[0]}; "
                 f"// {slice_reg.length_expr4.compile6[1]}",
                 f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
@@ -346,7 +349,7 @@ class TaggedLoop:
             "do "
             + indent_join(
                 [
-                    f"{tag_reg.expr6} = current[0];",
+                    f"{tag_reg.expr6} = current.cursor[0];",
                     "current = WV_SliceAfter(current, 1);",
                     f"switch ({tag_reg.expr6}) "
                     + indent_join(
@@ -475,7 +478,7 @@ def compile5_assemble(context):
             True,
             code_comment(
                 f"{context.content_expr6} = "
-                f"WV_Assemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
+                f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
                 "assemble",
             ),
         )
@@ -811,7 +814,7 @@ class CreateInst:
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
                     f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.zero_based)});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
-                    f"memset({context.prealloc_expr6}, 0, (sizeof({context.inst_type6}));",
+                    f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
             ),
             "create instance",
@@ -904,7 +907,7 @@ class CreateBiInst:
                     f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.zero_based)});",
                     f"WV_InitSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)}, {int(context.zero_based)});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
-                    f"memset({context.prealloc_expr6}, 0, (sizeof({context.inst_type6}));",
+                    f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
             ),
             "create bidirectional instance",
@@ -917,8 +920,8 @@ class DestroyBiInst:
             [
                 context.remove_stat7,
                 context.remove_rev_stat7,
-                f"WV_CleanSeq(&{context.inst_expr6}->seq, {context.buffer_data});",
-                f"WV_CleanSeq(&{context.inst_expr6}->seq_rev, {context.buffer_data});",
+                f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});",
+                f"WV_CleanSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)});",
                 f"WV_Free({context.inst_expr6});",
             ]
         )
@@ -929,7 +932,7 @@ class DestroyInst:
         self.compile7 = "\n".join(
             [
                 context.remove_stat7,
-                f"WV_CleanSeq(&{context.inst_expr6}->seq, {context.buffer_data});",
+                f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});",
                 f"WV_Free({context.inst_expr6});",
             ]
         )
