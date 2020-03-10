@@ -56,7 +56,7 @@ class LayerContext:
         self.structs = set()
         self.inst = None
         self.perm_regs = []
-        self.buffer_data = False
+        self.buffer_data = True
         self.zero_based = None
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
@@ -1138,6 +1138,7 @@ def compile5_next_list(next_list, context):
 
 def compile5_scanner(scanner, context):
     return [
+        UpdateReg(StackContext.HEADER, abstract_expr, False, "saved = current;"),
         UpdateReg(
             StackContext.HEADER,
             abstract_expr,

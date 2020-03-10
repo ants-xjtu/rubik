@@ -410,11 +410,14 @@ class Stack(NameMapMixin):
         self.name_map = name_map or {}
         self.context = StackContext()
         self.layer_count = 0
+        self.entry = None
         super().__init__()
 
     def handle_set(self, prototype):
         layer = Layer(prototype, self.context, self.layer_count)
         self.layer_count += 1
+        if self.entry is None:
+            self.entry = layer
         return layer
 
     def __iadd__(self, dir_pred):

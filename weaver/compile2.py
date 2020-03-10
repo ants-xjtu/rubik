@@ -39,7 +39,7 @@ def decl_header_reg(reg):
     return f"{prefix} _{reg.reg_id}{postfix};  // {reg.debug_name}"
 
 
-def compile7_stack(stack, blocks, inst_decls, layer_count):
+def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
     prefix7 = "\n".join(
         [
             "#include <weaver.h>",
@@ -123,6 +123,10 @@ def compile7_stack(stack, blocks, inst_decls, layer_count):
             [
                 *[f"H{struct} *h{struct};" for struct in stack.struct_map],
                 *[
+                    f"H{struct} h{struct}_c; h{struct} = &h{struct}_c;"
+                    for struct in stack.call_struct.values()
+                ],
+                *[
                     f"WV_ByteSlice l{layer}_c;\n" + f"WV_Byte *l{layer}_nf = NULL;"
                     for layer in range(layer_count)
                 ],
@@ -145,6 +149,7 @@ def compile7_stack(stack, blocks, inst_decls, layer_count):
                 ],
                 "WV_ByteSlice current = packet, saved;",
                 "WV_I32 return_target = -1;",
+                f"goto L{entry.block_id};",
                 "L_Shower: "
                 + make_block(
                     "switch (return_target) "

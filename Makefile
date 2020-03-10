@@ -8,6 +8,8 @@ bb := weaver_blackbox.c
 wb := weaver_whitebox.template.c
 sep = Weaver Auto-generated Blackbox Code
 
+BUILD_DIR = ./build/
+APP = procpkts
 TARGET_FLAG = -DWV_TARGET_$(T)
 export TARGET_FLAG
 
@@ -20,7 +22,7 @@ GCC_OPT = -m64 # -Wall -DNEWEV -Werror
 #DBG_OPT += -DPKTDUMP
 #DBG_OPT += -DDUMP_STREAM
 #GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
-GCC_OPT += -DNDEBUG -O3 -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
 GCC_OPT += $(DBG_OPT)
 
 ### LIBRARIES AND INCLUDES ###
