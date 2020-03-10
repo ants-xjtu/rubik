@@ -1,6 +1,7 @@
 from weaver.lang import (
     layout,
     Bit,
+    UInt,
     ConnectionOriented,
     If,
     Assign,
@@ -17,10 +18,10 @@ from weaver.lang import (
 
 
 class tcp_hdr(layout):
-    sport = Bit(16)
-    dport = Bit(16)
-    seq_num = Bit(32)
-    ack_num = Bit(32)
+    sport = UInt(16)
+    dport = UInt(16)
+    seq_num = UInt(32)
+    ack_num = UInt(32)
     hdr_len = Bit(4)
     blank = Bit(4)
     cwr = Bit(1)
@@ -31,7 +32,7 @@ class tcp_hdr(layout):
     rst = Bit(1)
     syn = Bit(1)
     fin = Bit(1)
-    window_size = Bit(16)
+    window_size = UInt(16)
     checksum = Bit(16)
     urgent_pointer = Bit(16)
 
@@ -216,9 +217,7 @@ def tcp_parser(ip):
     )
 
     for i, state in enumerate(tcp.psm.states()):
-        setattr(
-            tcp.psm, f"rst{i}", (state >> TERMINATE) + Pred(tcp.header.rst == 1)
-        )
+        setattr(tcp.psm, f"rst{i}", (state >> TERMINATE) + Pred(tcp.header.rst == 1))
 
     tcp.event.asm = If(tcp.psm.buffering) >> Assemble()
     return tcp

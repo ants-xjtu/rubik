@@ -2,6 +2,7 @@ from weaver.lang import (
     Connectionless,
     layout,
     Bit,
+    UInt,
     Assign,
     Sequence,
     PSM,
@@ -22,7 +23,7 @@ class ip_hdr(layout):
     version = Bit(4)
     ihl = Bit(4)
     tos = Bit(8)
-    tot_len = Bit(16)
+    tot_len = UInt(16)
     id = Bit(16)
     blank = Bit(1)
     dont_frag = Bit(1)
@@ -50,7 +51,7 @@ def ip_parser():
     ip.temp = ip_temp
     ip.prep = Assign(
         ip.temp.offset, ((ip.header.f1 << 8) + ip.header.f2) << 3
-    ) + Assign(ip.temp.length, ip.header.tot_len - ip.header.ihl << 2)
+    ) + Assign(ip.temp.length, ip.header.tot_len - (ip.header.ihl << 2))
 
     ip.seq = Sequence(meta=ip.temp.offset, data=ip.payload[: ip.temp.length])
 

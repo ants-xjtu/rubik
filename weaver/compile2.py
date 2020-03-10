@@ -142,7 +142,7 @@ def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
                     if raw_blocks7[block.block_id] != blocks7[block.block_id]
                 ],
                 *[
-                    decl_reg(reg, "$")
+                    decl_reg(reg, "_")
                     for reg in stack.reg_map.values()
                     # todo
                     if not hasattr(reg, "layer_id") and not hasattr(reg, "struct_id")

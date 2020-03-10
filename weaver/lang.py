@@ -12,11 +12,16 @@ from weaver.compile import (
     compile2_if,
     compile2_action,
     compile2_call,
+    compile2_uint,
+    compile2_layout,
+    compile2_header_action,
+    compile2_any_until,
     compile3a_prototype,
     compile4_const,
     compile4_op2,
     compile4_op1,
     compile4_var,
+    compile4_uint,
     compile4_payload,
     compile4_total,
     compile4_content,
@@ -52,6 +57,9 @@ class LayoutMeta(type, HeaderActionOpMixin):
 
     def compile1(self, context):
         return compile1_layout(self, context)
+
+    def compile2(self, context):
+        return compile2_layout(self, context)
 
 
 class layout(metaclass=LayoutMeta):
@@ -98,6 +106,9 @@ class HeaderAction(NameMapMixin):
 
     def __str__(self):
         return indent_join(str(stat) for stat in self.actions)
+
+    def compile2(self, context):
+        return compile2_header_action(self, context)
 
 
 class If:
@@ -179,6 +190,9 @@ class AnyUntil(HeaderActionOpMixin, NameMapMixin):
 
     def compile1(self, context):
         return compile1_any_until(self, context)
+
+    def compile2(self, context):
+        return compile2_any_until(self, context)
 
 
 class Prototype:
@@ -279,6 +293,26 @@ class Bit(UniversalNumberOpMixin):
 
     def compile4(self, context):
         return compile4_var(self.var_id, context)
+
+    def compile2(self, context):
+        pass
+
+
+class UInt(UniversalNumberOpMixin):
+    def __init__(self, length):
+        assert length in [16, 32]
+        self.length = length
+        self.virtual = False
+        self.var_id = object()
+
+    def __str__(self):
+        return f"$<_uint{self.length}>"
+
+    def compile2(self, context):
+        return compile2_uint(self, context)
+
+    def compile4(self, context):
+        return compile4_uint(self, context)
 
 
 class VirtualExprIndicator(UniversalNumberOpMixin):

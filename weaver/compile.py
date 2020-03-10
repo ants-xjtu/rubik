@@ -52,7 +52,7 @@ class LayerContext:
     def __init__(self, layer_id, stack):
         self.layer_id = layer_id
         self.stack = stack
-        self.var_map = {}  # var(aka Bit/AutoVar/InstVar) -> reg(aka int)
+        self.var_map = {}  # var(aka Bit/AutoVar/InstVar).var_id -> reg(aka int)
         self.structs = set()
         self.inst = None
         self.perm_regs = []
@@ -61,6 +61,7 @@ class LayerContext:
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
         self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
+        self.ntoh_map = {}  # UInt.var_id -> AutoVar
 
     def alloc_header_reg(self, bit, name):
         reg = HeaderReg(self.stack.reg_count, self.stack.struct_count, bit.length, name)
@@ -119,10 +120,6 @@ class LayerContext:
         return f"L{self.layer_id}F"
 
     @property
-    def search_expr6(self):
-        return self.hash_action_expr6_impl("search", "")
-
-    @property
     def insert_stat7(self):
         return self.insert_stat7_impl("")
 
@@ -140,26 +137,34 @@ class LayerContext:
             ]
         )
 
-    def hash_action_expr6_impl(self, action, postfix):
+    @property
+    def search_expr6(self):
         return "\n".join(
             [
-                f"tommy_hashdyn_{action}(",
-                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k{postfix},",
-                f"  hash(&{self.prealloc_expr6}->k{postfix}, sizeof(L{self.layer_id}K))",
+                f"tommy_hashdyn_search(",
+                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.prealloc_expr6}->k,",
+                f"  hash(&{self.prealloc_expr6}->k, sizeof(L{self.layer_id}K))",
                 ")",
             ]
         )
 
-    def hash_action_stat7_impl(self, action, postfix):
-        return self.hash_action_expr6_impl(action, postfix) + ";"
-
     @property
     def remove_stat7(self):
-        return self.hash_action_stat7_impl("remove", "")
+        return self.remove_stat7_impl("")
+
+    def remove_stat7_impl(self, postfix):
+        return "\n".join(
+            [
+                f"tommy_hashdyn_remove(",
+                f"  &runtime->t{self.layer_id}, l{self.layer_id}_eq, &{self.inst_expr6}->k{postfix},",
+                f"  hash(&{self.inst_expr6}->k{postfix}, sizeof(L{self.layer_id}K))",
+                ");",
+            ]
+        )
 
     @property
     def remove_rev_stat7(self):
-        return self.hash_action_stat7_impl("remove", "_rev")
+        return self.remove_stat7_impl("_rev")
 
     @property
     def content_expr6(self):
@@ -317,6 +322,24 @@ def compile1_layout(layout, context):
     return actions
 
 
+def compile2_layout(layout, context):
+    for var in layout.name_map.values():
+        var.compile2(context)
+
+
+def compile2_header_action(action, context):
+    for sub_action in action.actions:
+        sub_action.compile2(context)
+
+
+def compile2_uint(uint, context):
+    ntoh_var = AutoVar(uint.length // 8)
+    context.alloc_temp_reg(
+        ntoh_var, f"ntoh({context.stack.reg_map[context.query(uint)].debug_name})"
+    )
+    context.ntoh_map[uint.var_id] = ntoh_var
+
+
 def compile1_header_action(action, context):
     compiled_actions = []
     for sub_action in action.actions:
@@ -383,6 +406,12 @@ def compile1_any_until(any_until, context):
     return [TaggedLoop(tag_reg, cases1, any_until.pred.compile4(context))]
 
 
+def compile2_any_until(any_util, context):
+    for layout in any_util.layouts:
+        for _name, var in layout.field_list[1:]:
+            var.compile2(context)
+
+
 class TempReg:
     def __init__(self, reg_id, byte_length, length_expr4, debug_name):
         self.reg_id = reg_id
@@ -390,7 +419,7 @@ class TempReg:
         self.debug_name = debug_name
         self.length_expr4 = length_expr4
 
-        self.expr6 = f"${self.reg_id}"
+        self.expr6 = f"_{self.reg_id}"
 
 
 def compile2_temp_layout(layout, context):
@@ -551,7 +580,7 @@ class Eval1Op2:
 
 def compile6h_op2(name, expr1, expr2):
     if name == "add":
-        return f"({expr1}) + ({expr2})"
+        return f"WV_SafeAdd32({expr1}, {expr2})"
     elif name == "sub":
         return f"({expr1}) - ({expr2})"
     elif name == "left_shift":
@@ -644,6 +673,10 @@ def compile4_foreign_var(reg, context):
     )
 
 
+def compile4_uint(uint, context):
+    return compile4_var(context.ntoh_map[uint.var_id].var_id, context)
+
+
 class Eval1Abstract:
     def eval1(self, context):
         raise NotConstant()
@@ -666,21 +699,19 @@ class InstReg:
 
 
 def compile3_inst(prototype, context):
+    def extract(var):
+        try:
+            return context.query(var)
+        except AttributeError:  # foreign
+            return list(var.compile4(context).read_regs)[0]
+
     if isinstance(prototype.selector, list):
-        # NOTICE: `list(var.compile4(context).read_regs)[0]` hack only works when
-        # var is weaver.lang.Bit/ForeignVar
-        # if it is necessary to extend var's type to arbitrary expression
-        # the expression must be named, so as vexpr
-        # currently key fields borrow names from Bit/Foreign's global register ID
-        return Inst(
-            [list(var.compile4(context).read_regs)[0] for var in prototype.selector],
-            context.perm_regs,
-        )
+        return Inst([extract(var) for var in prototype.selector], context.perm_regs,)
     else:
         vars1, vars2 = prototype.selector
         return BiInst(
-            [list(var.compile4(context).read_regs)[0] for var in vars1],
-            [list(var.compile4(context).read_regs)[0] for var in vars2],
+            [extract(var) for var in vars1],
+            [extract(var) for var in vars2],
             context.perm_regs,
             AutoVar.from_bit(prototype.to_active),
         )
@@ -967,6 +998,7 @@ def compile3a_prototype(prototype, stack, layer_id, extra_event):
     context = LayerContext(layer_id, stack)
     scanner = prototype.header.compile1(context)
 
+    prototype.header.compile2(context)
     if prototype.temp is not None:
         compile2_temp_layout(prototype.temp, context)
     if prototype.perm is not None:
@@ -1084,7 +1116,14 @@ def compile5a_layer(layer):
 
 def compile5_finalize(layer, context):
     next_list5 = compile5_next_list(layer.next_list, context)
-    accept_list5 = next_list5
+    accept_list5 = [
+        UpdateReg(
+            StackContext.RUNTIME,
+            abstract_expr,
+            False,
+            f"current = {context.content_expr6};",
+        )
+    ] + next_list5
     if context.inst is not None:
         accept_list5 += [
             UpdateReg(
@@ -1143,7 +1182,15 @@ def compile5_scanner(scanner, context):
             StackContext.HEADER,
             abstract_expr,
             True,
-            "\n".join(action.compile7 for action in scanner),
+            "\n".join(
+                [
+                    *[
+                        f"{context.stack.reg_map[layout_reg].expr6} = 0;"
+                        for layout_reg in context.layout_map.values()
+                    ],
+                    *[action.compile7 for action in scanner],
+                ]
+            ),
         ),
         *[
             UpdateReg(
@@ -1163,6 +1210,17 @@ def compile5_scanner(scanner, context):
             False,
             code_comment(f"{context.content_expr6} = current;", "set SDU to payload"),
         ),
+        *[
+            UpdateReg(
+                context.query(ntoh_var),
+                Expr({context.var_map[var_id]}, Eval1Abstract(), None),
+                False,
+                f"{context.stack.reg_map[context.query(ntoh_var)].expr6} = "
+                f"WV_NToH{ntoh_var.byte_length * 8}"
+                f"({context.stack.reg_map[context.var_map[var_id]].expr6});",
+            )
+            for var_id, ntoh_var in context.ntoh_map.items()
+        ],
     ]
 
 
