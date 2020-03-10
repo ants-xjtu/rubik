@@ -47,7 +47,8 @@ DPDK_INC = -I$(SRC_DIR)/native/ -I$(SRC_DIR)/native/runtime -I$(SRC_DIR)/native/
 # DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
 # DPDK_LIB=$(RTE_SDK)/$(RTE_TARGET)/lib/
 include $(RTE_SDK)/mk/rte.vars.mk
-CFLAGS += $(DPDK_INC) -DXL710
+CFLAGS += $(DPDK_INC) -DXL710 $(TARGET_FLAG) -O3
+LDFLAGS += -lpcre2-8
 # DPDK_MACHINE_FLAGS=$(MACHINE_CFLAGS)
 # DPDK_LIB_FLAGS = -ldpdk -ldl -lnuma -lpthread
 

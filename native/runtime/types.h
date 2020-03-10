@@ -42,6 +42,28 @@ typedef struct _WV_ByteSlice {
 
 static const WV_ByteSlice WV_EMPTY = { .cursor = NULL, .length = 0 };
 
+#define SelfSliceAfter(s,l) s = WV_SliceAfter(s,l);
+// #define SelfSliceAfter(s,l) WV_FastSliceAfter(&s, l);
+
+#define SelfSliceBefore(s,l) s = WV_SliceBefore(s,l);
+// #define SelfSliceBefore(s,l) WV_FastSliceBefore(&s, l);
+
+static inline void WV_FastSliceAfter(WV_ByteSlice* slice, WV_U32 index)
+{
+    if (slice->cursor == NULL) {
+        slice->cursor = NULL;
+        slice->length = 0;
+        return;
+    }
+    if (slice->length < index) {
+        slice->cursor += slice->length;
+        slice->length = 0;
+        return;
+    }
+    slice->cursor += index;
+    slice->length -= index;
+}
+
 static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index)
 {
     if (slice.cursor == NULL) {
@@ -52,6 +74,19 @@ static inline WV_ByteSlice WV_SliceAfter(WV_ByteSlice slice, WV_U32 index)
     }
     WV_ByteSlice after = { .cursor = slice.cursor + index, .length = slice.length - index };
     return after;
+}
+
+static inline void WV_FastSliceBefore(WV_ByteSlice* slice, WV_U32 index)
+{
+    if (slice->cursor == NULL) {
+        slice->cursor = NULL;
+        slice->length = 0;
+        return;
+    }
+    if (slice->length < index) {
+        return;
+    }
+    slice->length = index;
 }
 
 static inline WV_ByteSlice WV_SliceBefore(WV_ByteSlice slice, WV_U32 index)

@@ -26,6 +26,8 @@ typedef struct {
 
 static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
 {
+    // use_data = 0;
+
     if (use_data) {
         seq->buffer = WV_Malloc(sizeof(WV_Byte) * WV_CONFIG_SeqBufferSize);
     } else {
@@ -41,6 +43,8 @@ static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
 
 static inline WV_U8 WV_CleanSeq(WV_Seq* seq, WV_U8 use_data)
 {
+    // use_data = 0;
+
     if (use_data) {
         WV_Free(seq->buffer);
     }
@@ -105,6 +109,7 @@ static inline WV_U8 WV_Insert(
     WV_U32 right // window right
 )
 {
+    // use_data = 0;
     // printf("%u %u\n", takeup_length, data.length);
     if (seq->set_offset) {
         seq->offset = offset;
@@ -164,14 +169,15 @@ static inline WV_U8 WV_Insert(
             if (offset < left) {
                 // left out of window
                 takeup_length -= left - offset;
-                data = WV_SliceAfter(data, left - offset);
+                SelfSliceAfter(data, left - offset);
+                // data = WV_SliceAfter(data, left - offset);
                 offset = left;
             }
             if (offset + takeup_length > right) {
                 // right out of window
                 takeup_length = right - offset;
                 if (offset + data.length > right) {
-                    data = WV_SliceBefore(data, right - offset);
+                    SelfSliceBefore(data, right - offset);
                 }
             }
         }
@@ -187,9 +193,13 @@ static inline WV_U8 WV_Insert(
     if (takeup_length != 0) {
         if (offset < seq->offset) {
             // hard out of order
+            // data.cursor = NULL;
+            // data.length = 0;
             data = WV_EMPTY;
         } else if (seq->post_start && offset + data.length > seq->postfix.left) {
             // hard out of window
+            // data.cursor = NULL;
+            // data.length = 0;
             data = WV_EMPTY;
         } else if (data.length != 0) {
             // assert(offset >= seq->offset);
@@ -251,10 +261,12 @@ static inline WV_U8 WV_Insert(
         if (seq->nodes[seq->used_count - 1].left - seq->offset < WV_CONFIG_SeqBufferSize) {
             // right out of memory
             seq->nodes[seq->used_count - 1].right = seq->offset + WV_CONFIG_SeqBufferSize;
-            data = WV_SliceBefore(data, seq->offset + WV_CONFIG_SeqBufferSize - offset);
+            SelfSliceBefore(data, seq->offset + WV_CONFIG_SeqBufferSize - offset);
         } else {
             // full out of memory
             seq->used_count -= 1;
+            // data.cursor = NULL;
+            // data.length = 0;
             data = WV_EMPTY;
         }
     }

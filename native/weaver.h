@@ -17,4 +17,10 @@ WV_U8 WV_FreeRuntime(WV_Runtime *);
 WV_Profile *WV_GetProfile(WV_Runtime *);
 // blackbox implemented end
 
+#define STRING_FINDER 1
+
+#ifdef STRING_FINDER
+void init_pcre();
+#endif
+
 #endif
