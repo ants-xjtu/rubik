@@ -56,8 +56,8 @@ def ip():
     t_dump, t_more, t_frag, t_last = tuple(x + 1 for x in range(4))
     state_machine = StateMachine([
         TransMap(s_dump, {
-            EqualExpr(parser.get('dont_frag'), ConstRaw(one)): TransDest(t_dump, s_dump, []),
-            EqualExpr(parser.get('more_frag'), ConstRaw(one)): TransDest(t_more, s_frag, []),
+            vdata.vexpr('expr1'): TransDest(t_dump, s_dump, []),
+            vdata.zexpr('expr1'): TransDest(t_more, s_frag, []),
         }),
         TransMap(s_frag, {
             vdata.vexpr('expr1'): TransDest(t_last, s_dump, []),
