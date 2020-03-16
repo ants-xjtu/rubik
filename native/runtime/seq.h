@@ -265,6 +265,7 @@ static inline WV_U8 WV_Insert(
         // printf("memcpy (insert)\n");
         memcpy(&seq->buffer[offset - seq->offset], data.cursor, data.length);
     }
+    // printf("exit\n");
     return _AssertNodes(seq);
 }
 
