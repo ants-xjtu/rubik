@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <sys/queue.h>
+#include <sys/time.h>
 #include <getopt.h>
 #include <signal.h>
 #include <inttypes.h>
@@ -52,16 +53,17 @@
 
 #define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
 
-#define NB_MBUFS 64*1024 /* use 64k mbufs */
+#define NB_MBUFS 128*1024 /* use 64k mbufs */
 #define MBUF_CACHE_SIZE 256
 #define PKT_BURST 32
-#define RX_RING_SIZE 1024
-#define TX_RING_SIZE 1024
+#define RX_RING_SIZE 128
+#define TX_RING_SIZE 512
 
 #define PARAM_PROC_ID "proc-id"
 #define PARAM_NUM_PROCS "num-procs"
 
 // #define RSS_DEBUG 1
+#define PERF_DEBUG 1
 #define RUBIK 1
 
 /* for each lcore, record the elements of the ports array to use */
@@ -220,12 +222,19 @@ set_xl710_nic(uint16_t port)
   // set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV6);
   // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_OTHER);
   //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_EX);
-  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
+  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
+  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
   // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_TCP);
   //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_TCP_EX);
   // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
   // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_UDP);
   //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_UDP_EX);
+  
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
+  //set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV4);
+  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_SCTP);
+  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
 
   ret = rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
   if (ret < 0) {
@@ -267,7 +276,8 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
           .rss_key = seed,
           .rss_key_len = sizeof(seed),
           // .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP,
-          .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP,
+          .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP,
+                    //ETH_RSS_NONFRAG_IPV4_SCTP | ETH_RSS_NONFRAG_IPV4_OTHER,
           // .rss_hf = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
         },
       },
@@ -386,6 +396,36 @@ typedef struct {
 
 DPDKUser* dpdk_user;
 
+unsigned long pkt_id = 0;
+unsigned long long pkt_vol = 0;
+struct timeval now;
+struct timeval milestone;
+#define PERF_AVG_NUM 5
+double throughputs[PERF_AVG_NUM];
+double peak_throught = -1;
+
+static void
+print_avg_throughput()
+{
+	double total = 0.0;
+	int i;
+	int r = 0;
+	for (i=0; i<PERF_AVG_NUM; i++) {
+		if (throughputs[i] <= 0) {
+      peak_throught = -1;
+      continue;
+    }
+		r++;
+		total += throughputs[i];
+    if (throughputs[i] > peak_throught) {
+      peak_throught = throughputs[i];
+    }
+	}
+	const unsigned id = rte_lcore_id();
+	printf("Lcore %d, Throughput: %lf Gbps (last %d avg.) Peak: %lf\n", 
+    id, (double)total/r, r, peak_throught);
+}
+
 /* Main function used by the processing threads.
  * Prints out some configuration details for the thread and then begins
  * performing packet RX and TX.
@@ -405,6 +445,9 @@ lcore_main(__attribute__((unused)) void *arg1)
     printf("Lcore %u has nothing to do\n", id);
     return 0;
   }
+  
+  memset(throughputs, 0, sizeof(double)*PERF_AVG_NUM);
+  int perf_index = 0;
 
   /* build up message in msgbuf before printing to decrease likelihood
    * of multi-core message interleaving.
@@ -438,6 +481,24 @@ lcore_main(__attribute__((unused)) void *arg1)
       uint16_t j;
       for (j = 0 ;j < rx_c; j++) {
           struct rte_mbuf* cur_buf = buf[j];
+#ifdef PERF_DEBUG
+          pkt_vol += rte_pktmbuf_pkt_len(cur_buf);
+      	  if (pkt_id++ > 5000000) {
+      	    gettimeofday(&now, NULL);
+  					time_t s = now.tv_sec - milestone.tv_sec;
+  					suseconds_t u = s * 1000000 + now.tv_usec - milestone.tv_usec;
+  					double throughput = (double)8000000*pkt_vol/(u*1000*1000*1000);
+  					// printf("time: %luus, pkt: %lu, vol: %lld, ", u, pkt_id, pkt_vol);
+  					throughputs[perf_index] = throughput;
+  					print_avg_throughput();
+  					// printf("Lcore %d, Throughput: %lfGbps\n", id, throughput);
+  					milestone.tv_sec = now.tv_sec;
+  					milestone.tv_usec = now.tv_usec;
+  					pkt_id = 0;
+  					pkt_vol = 0;
+  					perf_index = (perf_index+1) % PERF_AVG_NUM;
+  				}
+#endif
 #ifdef RSS_DEBUG
           unsigned char* eth_hdr = rte_pktmbuf_mtod(cur_buf, unsigned char*);
           /* IPv4 only */
@@ -461,10 +522,13 @@ lcore_main(__attribute__((unused)) void *arg1)
 #endif
           unsigned char* pkt_buf = rte_pktmbuf_mtod(cur_buf, unsigned char*);
           unsigned pkt_len = rte_pktmbuf_pkt_len(cur_buf);
+
           WV_Runtime *runtime = dpdk_user->runtime;
           WV_ByteSlice packet = { .cursor = pkt_buf, .length = pkt_len };
           WV_U8 status = WV_ProcessPacket(packet, runtime);
+#ifndef PERF_DEBUG
           WV_ProfileRecord(WV_GetProfile(runtime), pkt_len, status);
+#endif
       }
 #endif
 
@@ -596,9 +660,19 @@ main(int argc, char **argv)
       return 1;
   }
 
+#ifdef STRING_FINDER
+  init_pcre();
+#endif
+
   DPDKUser user = { .runtime = runtime, .port = 0 };
   dpdk_user = &user;
+  
+#ifdef PERF_DEBUG
+  gettimeofday(&milestone, NULL);
+#else
   WV_ProfileStart(WV_GetProfile(runtime));
+#endif
+
   
   rte_eal_mp_remote_launch(lcore_main, NULL, CALL_MASTER);
 
