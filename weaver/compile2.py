@@ -121,18 +121,22 @@ def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
         "WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) "
         + indent_join(
             [
-                *[f"H{struct} *h{struct};" for struct in stack.struct_map],
+                *[
+                    f"H{struct} *{compile6_struct_expr(struct)};"
+                    for struct in stack.struct_map
+                ],
                 *[
                     f"H{struct} h{struct}_c; h{struct} = &h{struct}_c;"
                     for struct in stack.call_struct.values()
                 ],
                 *[
-                    f"WV_ByteSlice l{layer}_c;\n" + f"WV_Byte *l{layer}_nf = NULL;"
+                    f"WV_ByteSlice {compile6_content(layer)};\n"
+                    + f"WV_Byte *{compile6_need_free(layer)} = NULL;"
                     for layer in range(layer_count)
                 ],
                 *[
-                    f"{compile6_inst_type(layer)} *l{layer}_i;\n"
-                    + f"{compile6_prefetch_type(layer)} *l{layer}_f;"
+                    f"{compile6_inst_type(layer)} *{compile6_inst_expr(layer)};\n"
+                    + f"{compile6_prefetch_type(layer)} *{compile6_prefetch_expr(layer)};"
                     for layer in range(layer_count)
                     if layer in inst_decls
                 ],
@@ -217,6 +221,33 @@ def compile6_prefetch_type(layer_id):
     return f"L{layer_id}F"
 
 
+def compile6_inst_expr(layer_id):
+    return f"l{layer_id}_i"
+
+
+def compile6_struct_expr(struct_id):
+    return f"h{struct_id}"
+
+
+def compile6_content(layer_id):
+    return f"l{layer_id}_c"
+
+
+def compile6_need_free(layer_id):
+    return f"l{layer_id}_nf"
+
+
+def compile6_prefetch_expr(layer_id):
+    return f"l{layer_id}_p"
+
+
+# really want to use `$123` instead of `_123` for every register
+# i.e. `h42->$123` for header registers and `l0_i->$123` for instance registers
+# and use `_123` for names derived from corresponding registers
+# i.e. `l0_f->k._123`
+# unfortunately, GDB use $123 as reference to result of expression no.123 in
+# interactive session
+# revert it to original idea if there's any way to tweak GDB pls
 def decl_reg(reg, prefix="_"):
     if reg.byte_length is not None:
         type_decl = f"WV_U{reg.byte_length * 8}"

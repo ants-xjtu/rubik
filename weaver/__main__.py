@@ -8,7 +8,7 @@ from weaver.compile2 import compile7_stack, compile7w_stack
 stack = import_module(argv[1]).stack
 block_map = {layer: compile5a_layer(layer.layer) for layer in stack.name_map.values()}
 entry = block_map[stack.entry]
-blocks = list(block_map.values())
+blocks = [block for entries in block_map.values() for block in entries.recursive()]
 inst_decls = {
     layer.layer.context.layer_id: layer.layer.context.inst.decl(layer.layer.context)
     for layer in stack.name_map.values()

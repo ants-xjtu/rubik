@@ -71,3 +71,9 @@ class Block:
 
         self.block_id = Block.count
         Block.count += 1
+
+    def recursive(self):
+        yield self
+        if self.pred is not None:
+            yield from self.yes_block.recursive()
+            yield from self.no_block.recursive()

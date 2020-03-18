@@ -26,6 +26,9 @@ compile7: generated C code for statement, without postfix '\n'
     or weaver.util.code_comment(<C code>, <debug info>)
 NOTICE: compile1-5 also modify LayerContext to archieve non-local code generation, such as
 external function declaration
+NOTICE: weaver.compile generates code fragments, while weaver.compile2 build the unify code
+file from all fragments, thus contains global setup code that not belongs to any single
+compilable entity
 NOTICE: compile7_branch and compile7_block lives in weaver.compile2 module to prevent circle dep
 NOTICE: compile3a_prototype and compile5a_layer are two special functions that work on layer level
 they complete stage 3 and 5 respectively for whole layer, and their signatures are a little
@@ -33,7 +36,17 @@ different to other functions in compile3 and compile5 families
 """
 
 from weaver.prog import Expr, UpdateReg, Branch, NotConstant, Block
-from weaver.compile2 import compile7_decl_inst, compile7_decl_bi_inst
+from weaver.compile2 import (
+    compile7_decl_inst,
+    compile7_decl_bi_inst,
+    compile6_inst_type,
+    compile6_prefetch_type,
+    compile6_content,
+    compile6_need_free,
+    compile6_struct_expr,
+    compile6_inst_expr,
+    compile6_prefetch_expr,
+)
 from weaver.util import code_comment, comment_only, indent_join
 
 
@@ -105,7 +118,7 @@ class LayerContext:
 
     @property
     def prefetch_expr6(self):
-        return f"l{self.layer_id}_f"
+        return compile6_prefetch_expr(self.layer_id)
 
     @property
     def prealloc_expr6(self):
@@ -113,11 +126,11 @@ class LayerContext:
 
     @property
     def inst_type6(self):
-        return f"L{self.layer_id}I"
+        return compile6_inst_type(self.layer_id)
 
     @property
     def prefetch_type6(self):
-        return f"L{self.layer_id}F"
+        return compile6_prefetch_type(self.layer_id)
 
     @property
     def insert_stat7(self):
@@ -168,19 +181,11 @@ class LayerContext:
 
     @property
     def content_expr6(self):
-        return f"l{self.layer_id}_c"
+        return compile6_content(self.layer_id)
 
     @property
     def need_free_expr6(self):
-        return f"l{self.layer_id}_nf"
-
-
-def compile6_inst_expr(layer_id):
-    return f"l{layer_id}_i"
-
-
-def compile6_struct_expr(struct_id):
-    return f"h{struct_id}"
+        return compile6_need_free(self.layer_id)
 
 
 class AutoVar:
@@ -391,7 +396,7 @@ class TaggedLoop:
 
 def compile1_any_until(any_until, context):
     _tag_name, tag_var = any_until.layouts[0].field_list[0]
-    context.alloc_temp_reg(AutoVar.from_bit(tag_var), "$tag")
+    context.alloc_temp_reg(AutoVar.from_bit(tag_var), "tag")
     tag_reg = context.stack.reg_map[context.query(tag_var)]
     cases1 = {}
     for layout in any_until.layouts:
