@@ -13,12 +13,6 @@ from weaver.lang import (
 )
 
 
-class ethernet_hdr(layout):
-    blank1 = Bit(64)
-    blank2 = Bit(32)
-    blank3 = Bit(16)
-
-
 class ip_hdr(layout):
     version = Bit(4)
     ihl = Bit(4)
@@ -45,7 +39,7 @@ class ip_temp(layout):
 def ip_parser():
     ip = Connectionless()
 
-    ip.header = ethernet_hdr + ip_hdr
+    ip.header = ip_hdr
     ip.selector = [ip.header.saddr, ip.header.daddr]
 
     ip.temp = ip_temp
@@ -58,14 +52,7 @@ def ip_parser():
     DUMP = PSMState(start=True, accept=True)
     FRAG = PSMState()
     ip.psm = PSM(DUMP, FRAG)
-    ip.psm.dump = (DUMP >> DUMP) + Pred(
-        (ip.header.dont_frag == 1)
-        | (
-            (ip.header.dont_frag == 0)
-            & (ip.header.more_frag == 0)
-            & (ip.temp.offset == 0)
-        )
-    )
+    ip.psm.dump = (DUMP >> DUMP) + Pred(ip.v.header.more_frag == 0)
     ip.psm.frag = (DUMP >> FRAG) + Pred(ip.header.more_frag == 1)
     ip.psm.more = (FRAG >> FRAG) + Pred(ip.header.more_frag == 1)
     ip.psm.last = (FRAG >> DUMP) + Pred(ip.v.header.more_frag == 0)

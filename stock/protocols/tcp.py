@@ -180,7 +180,7 @@ def tcp_parser(ip):
     tcp.seq = Sequence(
         meta=tcp.header.seq_num,
         zero_based=False,
-        data=tcp.payload,
+        data=tcp.payload[: tcp.temp.data_len],
         data_len=tcp.temp.data_len,
         window=(tcp.temp.wnd, tcp.temp.wnd + tcp.temp.wnd_size),
     )
