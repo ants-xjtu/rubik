@@ -51,7 +51,7 @@ DPDK_INC = -I$(SRC_DIR)/native/ -I$(SRC_DIR)/native/runtime -I$(SRC_DIR)/native/
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-CFLAGS += $(DPDK_INC) -D$(NIC) -D(FWD) -D$(PERF) $(TARGET_FLAG) -O3
+CFLAGS += $(DPDK_INC) -D$(NIC) -D$(FWD) -D$(PERF) $(TARGET_FLAG) -O3
 LDFLAGS += -lpcre2-8
 
 SRCS-y := $(SRCS)
