@@ -39,22 +39,20 @@ ifeq ($(T), dpdk)
 ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
+
+NIC ?= XL710
+FWD ?= FOWARD
+PERF ?= EVAL_PERF
 SRC_DIR = $(PWD)
 SRCS = $(bb) $(A) native/drivers/$(T).c $(SRC_DIR)/native/runtime/libwvrt.a
 # DPDK LIBRARY and HEADER
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
 DPDK_INC = -I$(SRC_DIR)/native/ -I$(SRC_DIR)/native/runtime -I$(SRC_DIR)/native/runtime/tommyds
-# DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
-# DPDK_LIB=$(RTE_SDK)/$(RTE_TARGET)/lib/
-include $(RTE_SDK)/mk/rte.vars.mk
-CFLAGS += $(DPDK_INC) -DXL710 $(TARGET_FLAG) -O3
-LDFLAGS += -lpcre2-8
-# DPDK_MACHINE_FLAGS=$(MACHINE_CFLAGS)
-# DPDK_LIB_FLAGS = -ldpdk -ldl -lnuma -lpthread
 
-# INC += ${DPDK_MACHINE_FLAGS} -I${DPDK_INC} -include $(DPDK_INC)/rte_config.h
-# LIBS += -L$(DPDK_LIB)
-# LIB_FLAGS += $(DPDK_LIB_FLAGS)
+include $(RTE_SDK)/mk/rte.vars.mk
+
+CFLAGS += $(DPDK_INC) -D$(NIC) -D(FWD) -D$(PERF) $(TARGET_FLAG) -O3
+LDFLAGS += -lpcre2-8
 
 SRCS-y := $(SRCS)
 include $(RTE_SDK)/mk/rte.extapp.mk

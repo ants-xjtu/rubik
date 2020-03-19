@@ -62,9 +62,8 @@
 #define PARAM_PROC_ID "proc-id"
 #define PARAM_NUM_PROCS "num-procs"
 
-// #define RSS_DEBUG 1
-#define PERF_DEBUG 1
-#define RUBIK 1
+// #define EVAL_PERF
+// #define FORWARD
 
 /* for each lcore, record the elements of the ports array to use */
 struct lcore_ports{
@@ -215,26 +214,10 @@ set_xl710_nic(uint16_t port)
 
   // see drivers/net/i40e/i40e_ethdev.c, I40E_FLOW_TYPES, for all flow types
   // supported by i40 driver (XL710)
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV4);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV4);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV6);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_OTHER);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_EX);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_TCP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_TCP_EX);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_UDP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_UDP_EX);
-  
   set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
   set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV4);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_SCTP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_SCTP);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
 
   ret = rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
   if (ret < 0) {
@@ -275,10 +258,12 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
         .rss_conf = {
           .rss_key = seed,
           .rss_key_len = sizeof(seed),
-          // .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP,
+#ifdef XL710
           .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP,
-                    //ETH_RSS_NONFRAG_IPV4_SCTP | ETH_RSS_NONFRAG_IPV4_OTHER,
-          // .rss_hf = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
+                    ETH_RSS_NONFRAG_IPV4_SCTP | ETH_RSS_NONFRAG_IPV4_OTHER,
+#else
+          .rss_hf = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
+#endif
         },
       },
       .txmode = {
@@ -325,9 +310,11 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
   if (retval < 0)
     return retval;
 
+#ifdef XL710
   retval = set_xl710_nic(port);
   if (retval < 0)
     return retval;
+#endif
 
   retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
   if (retval < 0)
@@ -369,13 +356,13 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
 static void
 assign_ports_to_cores(void)
 {
-
   const unsigned lcores = rte_eal_get_configuration()->lcore_count;
+  unsigned i;
+ #ifdef FORWARD
   const unsigned port_pairs = num_ports / 2;
   const unsigned pairs_per_lcore = port_pairs / lcores;
   unsigned extra_pairs = port_pairs % lcores;
   unsigned ports_assigned = 0;
-  unsigned i;
 
   RTE_LCORE_FOREACH(i) {
     lcore_ports[i].start_port = ports_assigned;
@@ -386,7 +373,14 @@ assign_ports_to_cores(void)
     }
     ports_assigned += lcore_ports[i].num_ports;
   }
+#else
+  RTE_LCORE_FOREACH(i) {
+    lcore_ports[i].start_port = 0;
+    lcore_ports[i].num_ports = num_ports;
+  }
+#endif
 }
+
 
 /* DPDKUser */
 typedef struct {
@@ -470,18 +464,19 @@ lcore_main(__attribute__((unused)) void *arg1)
 
     for (p = start_port; p < end_port; p++) {
       const uint8_t src = ports[p];
+#ifdef FORWARD
       const uint8_t dst = ports[p ^ 1]; /* 0 <-> 1, 2 <-> 3 etc */
+#endif
       const uint16_t rx_c = rte_eth_rx_burst(src, q_id, buf, PKT_BURST);
       if (rx_c == 0)
         continue;
       pstats[src].rx += rx_c;
 
-#ifdef RUBIK
       /* handle each of the recieved packets */
       uint16_t j;
       for (j = 0 ;j < rx_c; j++) {
           struct rte_mbuf* cur_buf = buf[j];
-#ifdef PERF_DEBUG
+#ifdef EVAL_PERF
           pkt_vol += rte_pktmbuf_pkt_len(cur_buf);
       	  if (pkt_id++ > 5000000) {
       	    gettimeofday(&now, NULL);
@@ -499,39 +494,18 @@ lcore_main(__attribute__((unused)) void *arg1)
   					perf_index = (perf_index+1) % PERF_AVG_NUM;
   				}
 #endif
-#ifdef RSS_DEBUG
-          unsigned char* eth_hdr = rte_pktmbuf_mtod(cur_buf, unsigned char*);
-          /* IPv4 only */
-          if (eth_hdr[12] != 0x08 || eth_hdr[13] != 0x00) continue;
-          struct iphdr* ip_hdr = (struct iphdr*)(eth_hdr+14);
-
-          uint16_t sport, dport;
-          memcpy(&sport, eth_hdr+14+4*ip_hdr->ihl, 2);
-          memcpy(&dport, eth_hdr+14+4*ip_hdr->ihl+2, 2);
-
-          struct in_addr addr1, addr2;
-          memcpy(&addr1, &(ip_hdr->saddr), 4);
-          memcpy(&addr2, &(ip_hdr->daddr), 4);
-
-          printf("\n");
-          printf("src ip: %s, ", inet_ntoa(addr1));
-          printf("src port: %hu, ", ntohs(sport));
-          printf("dst ip: %s, ", inet_ntoa(addr2));
-          printf("dst port: %hu, ", ntohs(dport));
-          printf("rss hash = %u", cur_buf->hash.rss);
-#endif
           unsigned char* pkt_buf = rte_pktmbuf_mtod(cur_buf, unsigned char*);
           unsigned pkt_len = rte_pktmbuf_pkt_len(cur_buf);
 
           WV_Runtime *runtime = dpdk_user->runtime;
           WV_ByteSlice packet = { .cursor = pkt_buf, .length = pkt_len };
           WV_U8 status = WV_ProcessPacket(packet, runtime);
-#ifndef PERF_DEBUG
+#ifndef EVAL_PERF
           WV_ProfileRecord(WV_GetProfile(runtime), pkt_len, status);
 #endif
       }
-#endif
 
+#ifdef FORWARD
       const uint16_t tx_c = rte_eth_tx_burst(dst, q_id, buf, rx_c);
       pstats[dst].tx += tx_c;
       if (tx_c != rx_c) {
@@ -539,6 +513,11 @@ lcore_main(__attribute__((unused)) void *arg1)
         for (i = tx_c; i < rx_c; i++)
           rte_pktmbuf_free(buf[i]);
       }
+#else
+      for (j = 0 ;j < rx_c; j++) {
+        rte_pktmbuf_free(buf[j]);
+      }
+#endif
     }
   }
 }
@@ -667,7 +646,7 @@ main(int argc, char **argv)
   DPDKUser user = { .runtime = runtime, .port = 0 };
   dpdk_user = &user;
   
-#ifdef PERF_DEBUG
+#ifdef EVAL_PERF
   gettimeofday(&milestone, NULL);
 #else
   WV_ProfileStart(WV_GetProfile(runtime));
