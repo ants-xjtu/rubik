@@ -17,6 +17,8 @@ eval1: (try to) evaluate expression
   signature: (EvalContext) -> <python object represents value> throws weaver.prog.NotConstant
 eval2: (try to) evaluate statement, statically implemented in weaver.prog
   signature: (EvalContext) -> None
+eval3: assert an expression to be true, and modify context according to it
+  signature: (EvalContext) -> None
 compile6: generated C code for expression
   signature: (<str for valid C code>, <str for debug info>)
 CAUTION: this signature has been proved to be a bad design, because when a single string is
@@ -680,6 +682,33 @@ def compile4_foreign_var(reg, context):
 
 def compile4_uint(uint, context):
     return compile4_var(context.ntoh_map[uint.var_id].var_id, context)
+
+
+def compile4_var_equal(var, expr, context):
+    var4 = var.compile4(context)
+    reg = list(var4.read_regs)[0]
+    expr4 = expr.compile4(context)
+    return Expr(
+        {reg, *expr4.read_regs},
+        Eval1Op2("equal", var4, expr4),
+        (
+            compile6h_op2("equal", var4.compile6[0], expr4.compile6[0]),
+            compile6h_op2("equal", var4.compile6[1], expr4.compile6[1]),
+        ),
+        Eval3VarEqual(reg, expr4),
+    )
+
+
+class Eval3VarEqual:
+    def __init__(self, reg, expr):
+        self.reg = reg
+        self.expr = expr
+
+    def eval3(self, context):
+        try:
+            context[self.reg] = self.expr.eval1(context)
+        except NotConstant:
+            pass
 
 
 class Eval1Abstract:

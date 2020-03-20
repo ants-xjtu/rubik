@@ -1,4 +1,4 @@
-from weaver.util import indent_join, make_block
+from weaver.util import indent_join, make_block, code_comment
 
 
 def compile7_branch(branch):
@@ -13,15 +13,20 @@ def compile7_branch(branch):
     )
 
 
-def compile7_block(block):
+def compile7_block(block, is_entry, layer_id):
+    if is_entry:
+        prefix = f"L{layer_id}: "
+    else:
+        prefix = f"B{block.block_id}: "
     if block.pred is not None:
-        escape = (
-            f"if ({block.pred.compile6}) goto L{block.yes_block.block_id}; "
-            "else goto L{block.no_block.block_id};"
+        escape = code_comment(
+            f"if ({block.pred.compile6[0]}) goto B{block.yes_block.block_id}; "
+            f"else goto B{block.no_block.block_id};",
+            f"BRANCH {block.pred.compile6[1]}",
         )
     else:
-        escape = "goto L_Shower;"
-    return f"L{block.block_id}: " + indent_join(
+        escape = "goto G_Shower;"
+    return prefix + indent_join(
         [*[instr.compile7 for instr in block.instr_list], escape]
     )
 
@@ -39,7 +44,7 @@ def decl_header_reg(reg):
     return f"{prefix} _{reg.reg_id}{postfix};  // {reg.debug_name}"
 
 
-def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
+def compile7_stack(stack, block_map, inst_decls, layer_count, entry_id):
     prefix7 = "\n".join(
         [
             "#include <weaver.h>",
@@ -111,7 +116,11 @@ def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
         ]
     )
 
-    raw_blocks7 = {block.block_id: compile7_block(block) for block in blocks}
+    raw_blocks7 = {
+        block.block_id: compile7_block(block, block is entry, layer_id)
+        for layer_id, entry in block_map.items()
+        for block in entry.recursive()
+    }
     blocks7 = {
         block_id: block7.replace("%%BLOCK_ID%%", str(block_id))
         for block_id, block7 in raw_blocks7.items()
@@ -141,9 +150,9 @@ def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
                     if layer in inst_decls
                 ],
                 *[
-                    f"WV_U8 b{block.block_id}_t;"
-                    for block in blocks
-                    if raw_blocks7[block.block_id] != blocks7[block.block_id]
+                    f"WV_U8 b{block_id}_t;"
+                    for block_id in blocks7
+                    if raw_blocks7[block_id] != blocks7[block_id]
                 ],
                 *[
                     decl_reg(reg, "_")
@@ -153,23 +162,22 @@ def compile7_stack(stack, blocks, inst_decls, layer_count, entry):
                 ],
                 "WV_ByteSlice current = packet, saved;",
                 "WV_I32 return_target = -1;",
-                f"goto L{entry.block_id};",
-                "L_Shower: "
+                f"goto L{entry_id};",
+                "G_Shower: "
                 + make_block(
                     "switch (return_target) "
                     + indent_join(
                         [
                             *[
-                                f"case {block.block_id}: goto B{block.block_id}_R;"
-                                for block in blocks
-                                if raw_blocks7[block.block_id]
-                                != blocks7[block.block_id]
+                                f"case {block_id}: goto B{block_id}_R;"
+                                for block_id in blocks7
+                                if raw_blocks7[block_id] != blocks7[block_id]
                             ],
-                            "default: goto L_End;",
+                            "default: goto G_End;",
                         ]
                     )
                 ),
-                "L_End: "
+                "G_End: "
                 + indent_join(
                     [
                         *[

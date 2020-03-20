@@ -28,6 +28,7 @@ from weaver.compile import (
     compile4_header_contain,
     compile4_foreign_var,
     compile4_empty,
+    compile4_var_equal,
     compile5_assign,
     compile5_action,
     compile5_assemble,
@@ -254,11 +255,14 @@ class UniversalNumberOpMixin:
     def __lt__(self, other):
         return LessThanOp(self, Const.wrap_int(other))
 
-    def __eq__(self, other):
-        return EqualOp(self, Const.wrap_int(other))
-
     def __ne__(self, other):
         return NotOp(EqualOp(self, Const.wrap_int(other)))
+
+
+# used by Bit
+class VariableOpMixin(UniversalNumberOpMixin):
+    def __eq__(self, other):
+        return VarEqualOp(self, Const.wrap_int(other))
 
 
 # used by compounded expressions
@@ -269,8 +273,34 @@ class NumberOpMixin(UniversalNumberOpMixin):
     def __or__(self, other):
         return LogicalOrOp(self, Const.wrap_int(other))
 
+    def __eq__(self, other):
+        return EqualOp(self, Const.wrap_int(other))
 
-class Bit(UniversalNumberOpMixin):
+
+class SliceOpMixin:
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            if key.start is not None:
+                if key.stop is not None:
+                    return SliceAfterOp(
+                        SliceBeforeOp(self, Const.wrap_int(key.stop)),
+                        Const.wrap_int(key.start),
+                    )
+                else:
+                    return SliceAfterOp(self, Const.wrap_int(key.start))
+            elif key.stop is not None:
+                return SliceBeforeOp(self, Const.wrap_int(key.stop))
+            else:
+                return self
+        else:
+            return SliceGetOp(self, Const.wrap_int(key))
+
+    @property
+    def length(self):
+        return SliceLengthOp(self)
+
+
+class Bit(VariableOpMixin):
     def __init__(self, length=None, init=None, const=None):
         self.length = length
         self.init = Const.wrap_int(init)
@@ -298,7 +328,7 @@ class Bit(UniversalNumberOpMixin):
         pass
 
 
-class UInt(UniversalNumberOpMixin):
+class UInt(VariableOpMixin):
     def __init__(self, length):
         assert length in [16, 32]
         self.length = length
@@ -315,7 +345,7 @@ class UInt(UniversalNumberOpMixin):
         return compile4_uint(self, context)
 
 
-class VirtualExprIndicator(UniversalNumberOpMixin):
+class VirtualExprIndicator(VariableOpMixin):
     def __init__(self, var):
         self.var = var
         self.virtual = True
@@ -325,29 +355,6 @@ class VirtualExprIndicator(UniversalNumberOpMixin):
 
     def compile4(self, context):
         return compile4_var(self.var.var_id, context)
-
-
-class SliceOpMixin:
-    def __getitem__(self, key):
-        if isinstance(key, slice):
-            if key.start is not None:
-                if key.stop is not None:
-                    return SliceAfterOp(
-                        SliceBeforeOp(self, Const.wrap_int(key.stop)),
-                        Const.wrap_int(key.start),
-                    )
-                else:
-                    return SliceAfterOp(self, Const.wrap_int(key.start))
-            elif key.stop is not None:
-                return SliceBeforeOp(self, Const.wrap_int(key.stop))
-            else:
-                return self
-        else:
-            return SliceGetOp(self, Const.wrap_int(key))
-
-    @property
-    def length(self):
-        return SliceLengthOp(self)
 
 
 class ActionOpMixin:
@@ -871,3 +878,16 @@ class ContentExpr(SliceOpMixin):
 
     def compile4(self, context):
         return compile4_content(context)
+
+
+class VarEqualOp(NumberOpMixin):
+    def __init__(self, var, expr):
+        self.var = var
+        self.expr = expr
+        self.virtual = False
+
+    def __str__(self):
+        return f"vareq<{self.var} == {self.expr}>"
+
+    def compile4(self, context):
+        return compile4_var_equal(self.var, self.expr, context)
