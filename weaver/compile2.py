@@ -2,14 +2,16 @@ from weaver.util import indent_join, make_block, code_comment
 
 
 def compile7_branch(branch):
-    return "\n".join(
-        [
-            f"// IF {branch.pred.compile6[1]}",
-            f"if ({branch.pred.compile6[0]}) "
-            + indent_join(stat.compile7 for stat in branch.yes_list)
-            + " else "
-            + indent_join(stat.compile7 for stat in branch.no_list),
-        ]
+    return code_comment(
+        "\n".join(
+            [
+                f"if ({branch.pred.compile6[0]}) "
+                + indent_join(stat.compile7 for stat in branch.yes_list)
+                + " else "
+                + indent_join(stat.compile7 for stat in branch.no_list),
+            ]
+        ),
+        f"IF {branch.pred.compile6[1]}",
     )
 
 
@@ -29,6 +31,21 @@ def compile7_block(block, is_entry, layer_id):
     return prefix + indent_join(
         [*[instr.compile7 for instr in block.instr_list], escape]
     )
+
+
+# really want to use `$123` instead of `_123` for every register
+# i.e. `h42->$123` for header registers and `l0_i->$123` for instance registers
+# and use `_123` for names derived from corresponding registers
+# i.e. `l0_f->k._123`
+# unfortunately, GDB use $123 as reference to result of expression no.123 in
+# interactive session
+# revert it to original idea if there's any way to tweak GDB pls
+def decl_reg(reg, prefix="_"):
+    if reg.byte_length is not None:
+        type_decl = f"WV_U{reg.byte_length * 8}"
+    else:
+        type_decl = "WV_ByteSlice"
+    return f"{type_decl} {prefix}{reg.reg_id};  // {reg.debug_name}"
 
 
 def decl_header_reg(reg):
@@ -247,21 +264,6 @@ def compile6_need_free(layer_id):
 
 def compile6_prefetch_expr(layer_id):
     return f"l{layer_id}_p"
-
-
-# really want to use `$123` instead of `_123` for every register
-# i.e. `h42->$123` for header registers and `l0_i->$123` for instance registers
-# and use `_123` for names derived from corresponding registers
-# i.e. `l0_f->k._123`
-# unfortunately, GDB use $123 as reference to result of expression no.123 in
-# interactive session
-# revert it to original idea if there's any way to tweak GDB pls
-def decl_reg(reg, prefix="_"):
-    if reg.byte_length is not None:
-        type_decl = f"WV_U{reg.byte_length * 8}"
-    else:
-        type_decl = "WV_ByteSlice"
-    return f"{type_decl} {prefix}{reg.reg_id};  // {reg.debug_name}"
 
 
 def compile7_decl_inst(inst, context):
