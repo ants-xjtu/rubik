@@ -37,34 +37,15 @@ from weaver.compile import (
 )
 
 
+# helper mixins
 class HeaderActionOpMixin:
     def __add__(self, other):
         return HeaderAction([self, other])
 
 
-class LayoutMeta(type, HeaderActionOpMixin):
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.field_list = [
-            (name, value)
-            for name, value in self.__dict__.items()
-            if not name.startswith("_")
-        ]
-        self.name_map = {name: value for name, value in self.field_list}
-        self.debug_name = self.__name__
-
-    def __str__(self):
-        return f"parse({self.__name__})"
-
-    def compile1(self, context):
-        return compile1_layout(self, context)
-
-    def compile2(self, context):
-        return compile2_layout(self, context)
-
-
-class layout(metaclass=LayoutMeta):
-    pass
+class ActionOpMixin:
+    def __add__(self, other):
+        return Action([self, other])
 
 
 class NameMapMixin:
@@ -89,157 +70,6 @@ class NameMapMixin:
 
     def handle_get(self, value):
         return value
-
-
-class HeaderAction(NameMapMixin):
-    def __init__(self, actions):
-        self.actions = actions
-        self.name_map = {}
-        for action in actions:
-            self.name_map = {**self.name_map, **action.name_map}
-        super().__init__()
-
-    def __add__(self, other):
-        return HeaderAction([*self.actions, other])
-
-    def compile1(self, context):
-        return compile1_header_action(self, context)
-
-    def __str__(self):
-        return indent_join(str(stat) for stat in self.actions)
-
-    def compile2(self, context):
-        return compile2_header_action(self, context)
-
-
-class If:
-    def __init__(self, pred):
-        self.pred = Const.wrap_int(pred)
-
-    def __rshift__(self, action):
-        return IfElse(self.pred, action, Action([]))
-
-
-class Else:
-    pass
-
-
-class Action:
-    def __init__(self, stats):
-        self.stats = stats
-
-    def __add__(self, other):
-        return Action([*self.stats, other])
-
-    def __str__(self):
-        return indent_join(str(stat) for stat in self.stats)
-
-    def compile5(self, context):
-        return compile5_action(self, context)
-
-    def compile2(self, context):
-        return compile2_action(self, context)
-
-
-class IfElse(NameMapMixin):
-    def __init__(self, pred, yes_action, no_action):
-        self.pred = pred
-        self.yes_action = yes_action
-        self.no_action = no_action
-        if hasattr(yes_action, "name_map"):
-            self.name_map = yes_action.name_map
-        super().__init__()
-
-    def __rshift__(self, else_object):
-        return ExpectNoAction(self)
-
-    def __add__(self, other):
-        if isinstance(other, HeaderActionOpMixin) or isinstance(other, HeaderAction):
-            return HeaderAction([self, other])
-        else:
-            return Action([self, other])
-
-    def compile1(self, context):
-        return compile1_if(self, context)
-
-    def __str__(self):
-        return f"If {self.pred} Then {self.yes_action} Else {self.no_action}"
-
-    def compile5(self, context):
-        return compile5_if(self, context)
-
-    def compile2(self, context):
-        return compile2_if(self, context)
-
-
-class ExpectNoAction:
-    def __init__(self, ifelse):
-        self.ifelse = ifelse
-
-    def __rshift__(self, action):
-        return IfElse(self.ifelse.pred, self.ifelse.yes_action, action)
-
-
-class AnyUntil(HeaderActionOpMixin, NameMapMixin):
-    def __init__(self, layouts, pred):
-        self.layouts = layouts
-        self.pred = pred
-        self.name_map = {}
-        for layout in layouts:
-            self.name_map = {**self.name_map, **layout.name_map}
-        super().__init__()
-
-    def compile1(self, context):
-        return compile1_any_until(self, context)
-
-    def compile2(self, context):
-        return compile2_any_until(self, context)
-
-
-class Prototype:
-    def __init__(self):
-        self.header = self.selector = self.temp = self.prep = self.seq = self.psm = None
-        self.perm = None
-        self.event = EventGroup({}, {}, {})
-
-        self.payload = PayloadExpr()
-        self.payload_len = self.payload.length
-        self.cursor = TotalExpr().length - self.payload_len
-        self.sdu = ContentExpr()
-
-        self.current_state = Bit(8, init=0)
-        self.to_active = Bit(8)
-        self.to_passive = NotOp(self.to_active)
-
-        self.v = VDomain(self)
-
-    def header_contain(self, layout):
-        return HeaderContainOp(layout)
-
-
-Connectionless = ConnectionOriented = Prototype
-
-
-class VDomain:
-    def __init__(self, prototype):
-        self.prototype = prototype
-
-    @property
-    def header(self):
-        return VNameMap(self.prototype.header)
-
-    @property
-    def temp(self):
-        return VNameMap(self.prototype.temp)
-
-
-class VNameMap(NameMapMixin):
-    def __init__(self, provider):
-        self.name_map = provider.name_map
-        super().__init__()
-
-    def handle_get(self, var):
-        return VirtualExprIndicator(var)
 
 
 class UniversalNumberOpMixin:
@@ -300,6 +130,180 @@ class SliceOpMixin:
         return SliceLengthOp(self)
 
 
+# "the" stack
+class Stack(NameMapMixin):
+    def __init__(self, name_map=None, next_map=None):
+        self.name_map = name_map or {}
+        self.context = StackContext()
+        self.layer_count = 0
+        self.entry = None
+        super().__init__()
+
+    def handle_set(self, prototype):
+        layer = Layer(prototype, self.context, self.layer_count)
+        self.layer_count += 1
+        if self.entry is None:
+            self.entry = layer
+        return layer
+
+    def __iadd__(self, dir_pred):
+        dir_pred.src.layer.next_list.append((dir_pred.pred, dir_pred.dst.layer))
+        return self
+
+
+class Layer:
+    def __init__(self, prototype, stack, layer_id):
+        self.layer = compile3a_prototype(
+            prototype, stack, layer_id, EventGroup({}, {}, {})
+        )
+        self.header = ForeignNameMap(self.layer.header, self.layer.context)
+        if self.layer.temp is not None:
+            self.temp = ForeignNameMap(self.layer.temp, self.layer.context)
+        if self.layer.perm is not None:
+            self.perm = ForeignNameMap(self.layer.perm, self.layer.context)
+        self.event = self.layer.event
+        # self.current_state = self.layer.state_var
+        self.sdu = prototype.sdu
+
+    def __rshift__(self, dst_layer):
+        return Direction(self, dst_layer)
+
+
+# foreign variable interfaces
+class ForeignNameMap(NameMapMixin):
+    def __init__(self, provider, context):
+        self.name_map = provider.name_map
+        self.context = context
+        super().__init__()
+
+    def handle_get(self, var):
+        return ForeignVar(self.context.query(var))
+
+
+class ForeignVar(UniversalNumberOpMixin):
+    def __init__(self, reg):
+        self.reg = reg
+        self.virtual = False
+
+    def compile4(self, context):
+        return compile4_foreign_var(self.reg, context)
+
+
+# "the" prototype
+class Prototype:
+    def __init__(self):
+        self.header = self.selector = self.temp = self.prep = self.seq = self.psm = None
+        self.perm = None
+        self.event = EventGroup({}, {}, {})
+
+        self.payload = PayloadExpr()
+        self.payload_len = self.payload.length
+        self.cursor = TotalExpr().length - self.payload_len
+        self.sdu = ContentExpr()
+
+        self.current_state = Bit(8, init=0)
+        self.to_active = Bit(8)
+        self.to_passive = NotOp(self.to_active)
+
+        self.v = VDomain(self)
+
+    def header_contain(self, layout):
+        return HeaderContainOp(layout)
+
+
+Connectionless = ConnectionOriented = Prototype
+
+
+# virtual expression interfaces
+class VDomain:
+    def __init__(self, prototype):
+        self.prototype = prototype
+
+    @property
+    def header(self):
+        return VNameMap(self.prototype.header)
+
+    @property
+    def temp(self):
+        return VNameMap(self.prototype.temp)
+
+
+class VNameMap(NameMapMixin):
+    def __init__(self, provider):
+        self.name_map = provider.name_map
+        super().__init__()
+
+    def handle_get(self, var):
+        return VirtualExprIndicator(var)
+
+
+class VirtualExprIndicator(VariableOpMixin):
+    def __init__(self, var):
+        self.var = var
+        self.virtual = True
+
+    def __str__(self):
+        return f"(virtual){self.var}"
+
+    def compile4(self, context):
+        return compile4_var(self.var.var_id, context)
+
+
+# common pipeline interfaces
+class Direction:
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+
+    def __add__(self, pred):
+        return DirPred(self.src, self.dst, pred.pred, Action([]))
+
+
+class Predicate:
+    def __init__(self, pred):
+        self.pred = Const.wrap_int(pred)
+
+
+Pred = Predicate
+
+
+class DirPred:
+    def __init__(self, src, dst, pred, action):
+        self.src = src
+        self.dst = dst
+        self.pred = pred
+        self.action = action
+
+    def __add__(self, stat):
+        return DirPred(self.src, self.dst, self.pred, self.action + stat)
+
+
+# layout interface
+class LayoutMeta(type, HeaderActionOpMixin):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.field_list = [
+            (name, value)
+            for name, value in self.__dict__.items()
+            if not name.startswith("_")
+        ]
+        self.name_map = {name: value for name, value in self.field_list}
+        self.debug_name = self.__name__
+
+    def __str__(self):
+        return f"parse({self.__name__})"
+
+    def compile1(self, context):
+        return compile1_layout(self, context)
+
+    def compile2(self, context):
+        return compile2_layout(self, context)
+
+
+class layout(metaclass=LayoutMeta):
+    pass
+
+
 class Bit(VariableOpMixin):
     def __init__(self, length=None, init=None, const=None):
         self.length = length
@@ -345,190 +349,19 @@ class UInt(VariableOpMixin):
         return compile4_uint(self, context)
 
 
-class VirtualExprIndicator(VariableOpMixin):
-    def __init__(self, var):
-        self.var = var
-        self.virtual = True
-
-    def __str__(self):
-        return f"(virtual){self.var}"
-
-    def compile4(self, context):
-        return compile4_var(self.var.var_id, context)
-
-
-class ActionOpMixin:
-    def __add__(self, other):
-        return Action([self, other])
-
-
-class Assign(ActionOpMixin):
-    def __init__(self, var, expr):
-        self.var = var
-        self.expr = Const.wrap_int(expr)
-        assert not self.expr.virtual
-
-    def __str__(self):
-        return f"Assign {self.var} <- {self.expr}"
-
-    def compile5(self, context):
-        return compile5_assign(self, context)
-
-    def compile2(self, context):
-        pass
-
-
-class Assemble(ActionOpMixin):
-    def __str__(self):
-        return f"Assemble"
-
-    def compile5(self, context):
-        return compile5_assemble(context)
-
-    def compile2(self, context):
-        pass
-
-
-class Call(ActionOpMixin):
-    def __init__(self, layout):
-        self.layout = layout
-
-    def compile2(self, context):
-        return compile2_call(self, context)
-
-    def compile5(self, context):
-        return compile5_call(self, context)
-
-
-# Only unsigned integer constants are initialized as Const
-# empty slice is the only slice constant that could be created currently
-class Const(UniversalNumberOpMixin):
-    def __init__(self, value):
-        self.value = value
-        self.virtual = False
-
-    @staticmethod
-    def wrap_int(value):
-        if isinstance(value, int):
-            return Const(value)
-        else:
-            return value
-
-    def __str__(self):
-        return f"Const({self.value})"
-
-    def compile4(self, context):
-        return compile4_const(self.value)
-
-
-class NoData(SliceOpMixin):
-    def __init__(self):
-        self.virtual = False
-
-    def __str__(self):
-        return "EmptySlice"
-
-    def compile4(self, context):
-        return compile4_empty()
-
-
+# dedicated pipeline interfaces
 class Sequence:
     def __init__(
-        self, meta, data, zero_based=True, data_len=Const(0), window=None,
+        self, meta, data, zero_based=True, data_len=None, window=None,
     ):
         self.offset = meta
         self.data = data
         self.zero_based = zero_based
-        self.takeup = data_len
+        self.takeup = data_len or Const(0)
         if window is None:
             self.window_left = self.window_right = Const(0)
         else:
             self.window_left, self.window_right = window
-
-
-class Stack(NameMapMixin):
-    def __init__(self, name_map=None, next_map=None):
-        self.name_map = name_map or {}
-        self.context = StackContext()
-        self.layer_count = 0
-        self.entry = None
-        super().__init__()
-
-    def handle_set(self, prototype):
-        layer = Layer(prototype, self.context, self.layer_count)
-        self.layer_count += 1
-        if self.entry is None:
-            self.entry = layer
-        return layer
-
-    def __iadd__(self, dir_pred):
-        dir_pred.src.layer.next_list.append((dir_pred.pred, dir_pred.dst.layer))
-        return self
-
-
-class Layer:
-    def __init__(self, prototype, stack, layer_id):
-        self.layer = compile3a_prototype(
-            prototype, stack, layer_id, EventGroup({}, {}, {})
-        )
-        self.header = ForeignNameMap(self.layer.header, self.layer.context)
-        if self.layer.temp is not None:
-            self.temp = ForeignNameMap(self.layer.temp, self.layer.context)
-        if self.layer.perm is not None:
-            self.perm = ForeignNameMap(self.layer.perm, self.layer.context)
-        self.event = self.layer.event
-        self.current_state = self.layer.state_var
-        self.sdu = prototype.sdu
-
-    def __rshift__(self, dst_layer):
-        return Direction(self, dst_layer)
-
-
-class ForeignNameMap(NameMapMixin):
-    def __init__(self, provider, context):
-        self.name_map = provider.name_map
-        self.context = context
-        super().__init__()
-
-    def handle_get(self, var):
-        return ForeignVar(self.context.query(var))
-
-
-class ForeignVar(UniversalNumberOpMixin):
-    def __init__(self, reg):
-        self.reg = reg
-        self.virtual = False
-
-    def compile4(self, context):
-        return compile4_foreign_var(self.reg, context)
-
-
-class Direction:
-    def __init__(self, src, dst):
-        self.src = src
-        self.dst = dst
-
-    def __add__(self, pred):
-        return DirPred(self.src, self.dst, pred.pred, Action([]))
-
-
-class Predicate:
-    def __init__(self, pred):
-        self.pred = Const.wrap_int(pred)
-
-
-Pred = Predicate
-
-
-class DirPred:
-    def __init__(self, src, dst, pred, action):
-        self.src = src
-        self.dst = dst
-        self.pred = pred
-        self.action = action
-
-    def __add__(self, stat):
-        return DirPred(self.src, self.dst, self.pred, self.action + stat)
 
 
 class PSMState:
@@ -685,6 +518,187 @@ class Event:
         for var in cause_vars:
             action = If(var == 1) >> action
         return action
+
+
+# complex header statements
+# (simple header statements are layouts)
+class HeaderAction(NameMapMixin):
+    def __init__(self, actions):
+        self.actions = actions
+        self.name_map = {}
+        for action in actions:
+            self.name_map = {**self.name_map, **action.name_map}
+        super().__init__()
+
+    def __add__(self, other):
+        return HeaderAction([*self.actions, other])
+
+    def compile1(self, context):
+        return compile1_header_action(self, context)
+
+    def __str__(self):
+        return indent_join(str(stat) for stat in self.actions)
+
+    def compile2(self, context):
+        return compile2_header_action(self, context)
+
+
+class AnyUntil(HeaderActionOpMixin, NameMapMixin):
+    def __init__(self, layouts, pred):
+        self.layouts = layouts
+        self.pred = pred
+        self.name_map = {}
+        for layout in layouts:
+            self.name_map = {**self.name_map, **layout.name_map}
+        super().__init__()
+
+    def compile1(self, context):
+        return compile1_any_until(self, context)
+
+    def compile2(self, context):
+        return compile2_any_until(self, context)
+
+
+# both header & processing statements
+class If:
+    def __init__(self, pred):
+        self.pred = Const.wrap_int(pred)
+
+    def __rshift__(self, action):
+        return IfElse(self.pred, action, Action([]))
+
+
+class Else:
+    pass
+
+
+class Action:
+    def __init__(self, stats):
+        self.stats = stats
+
+    def __add__(self, other):
+        return Action([*self.stats, other])
+
+    def __str__(self):
+        return indent_join(str(stat) for stat in self.stats)
+
+    def compile5(self, context):
+        return compile5_action(self, context)
+
+    def compile2(self, context):
+        return compile2_action(self, context)
+
+
+class IfElse(NameMapMixin):
+    def __init__(self, pred, yes_action, no_action):
+        self.pred = pred
+        self.yes_action = yes_action
+        self.no_action = no_action
+        if hasattr(yes_action, "name_map"):
+            self.name_map = yes_action.name_map
+        super().__init__()
+
+    def __rshift__(self, else_object):
+        return ExpectNoAction(self)
+
+    def __add__(self, other):
+        if isinstance(other, HeaderActionOpMixin) or isinstance(other, HeaderAction):
+            return HeaderAction([self, other])
+        else:
+            return Action([self, other])
+
+    def compile1(self, context):
+        return compile1_if(self, context)
+
+    def __str__(self):
+        return f"If {self.pred} Then {self.yes_action} Else {self.no_action}"
+
+    def compile5(self, context):
+        return compile5_if(self, context)
+
+    def compile2(self, context):
+        return compile2_if(self, context)
+
+
+class ExpectNoAction:
+    def __init__(self, ifelse):
+        self.ifelse = ifelse
+
+    def __rshift__(self, action):
+        return IfElse(self.ifelse.pred, self.ifelse.yes_action, action)
+
+
+# processing statements
+class Assign(ActionOpMixin):
+    def __init__(self, var, expr):
+        self.var = var
+        self.expr = Const.wrap_int(expr)
+        assert not self.expr.virtual
+
+    def __str__(self):
+        return f"Assign {self.var} <- {self.expr}"
+
+    def compile5(self, context):
+        return compile5_assign(self, context)
+
+    def compile2(self, context):
+        pass
+
+
+class Assemble(ActionOpMixin):
+    def __str__(self):
+        return f"Assemble"
+
+    def compile5(self, context):
+        return compile5_assemble(context)
+
+    def compile2(self, context):
+        pass
+
+
+class Call(ActionOpMixin):
+    def __init__(self, layout):
+        self.layout = layout
+
+    def compile2(self, context):
+        return compile2_call(self, context)
+
+    def compile5(self, context):
+        return compile5_call(self, context)
+
+
+# simple expressions
+# (other simple expressions are Bit/UInt (aka variable), VExprIndicator and ForeignVar)
+# Only unsigned integer constants are initialized as Const
+# empty slice is the only slice constant that could be created currently
+class Const(UniversalNumberOpMixin):
+    def __init__(self, value):
+        self.value = value
+        self.virtual = False
+
+    @staticmethod
+    def wrap_int(value):
+        if isinstance(value, int):
+            return Const(value)
+        else:
+            return value
+
+    def __str__(self):
+        return f"Const({self.value})"
+
+    def compile4(self, context):
+        return compile4_const(self.value)
+
+
+class NoData(SliceOpMixin):
+    def __init__(self):
+        self.virtual = False
+
+    def __str__(self):
+        return "EmptySlice"
+
+    def compile4(self, context):
+        return compile4_empty()
 
 
 # Op
