@@ -135,7 +135,7 @@ def tcp_parser(ip):
     SYN_SENT, SYN_RCV, EST, FIN_WAIT_1, CLOSE_WAIT, LAST_ACK = make_psm_state(6)
     TERMINATE = PSMState(accept=True)
 
-    tcp.prep = If(tcp.header.ack == 1) >> Assign(tcp.temp.data_len, tcp.payload_len)
+    tcp.prep = Assign(tcp.temp.data_len, tcp.payload_len)
     tcp.prep = (
         If(tcp.header.syn == 1) >> Assign(tcp.temp.data_len, 1) >> Else() >> tcp.prep
     )

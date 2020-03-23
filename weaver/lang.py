@@ -89,10 +89,16 @@ class UniversalNumberOpMixin:
         return NotOp(EqualOp(self, Const.wrap_int(other)))
 
 
-# used by Bit
+# used by Bit/ForeignVar
 class VariableOpMixin(UniversalNumberOpMixin):
     def __eq__(self, other):
         return VarEqualOp(self, Const.wrap_int(other))
+
+
+# used by VirtualExprIndicator
+class VirtualExprOpMixin(UniversalNumberOpMixin):
+    def __eq__(self, other):
+        return EqualOp(self, Const.wrap_int(other))
 
 
 # used by compounded expressions
@@ -237,7 +243,7 @@ class VNameMap(NameMapMixin):
         return VirtualExprIndicator(var)
 
 
-class VirtualExprIndicator(VariableOpMixin):
+class VirtualExprIndicator(VirtualExprOpMixin):
     def __init__(self, var):
         self.var = var
         self.virtual = True

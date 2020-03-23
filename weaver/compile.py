@@ -241,6 +241,17 @@ def compile4_var(var_id, context):
     return Expr({reg}, Eval1Var(reg), (reg_info.expr6, "$" + reg_info.debug_name))
 
 
+class Eval1Var:
+    def __init__(self, reg):
+        self.reg = reg
+
+    def eval1(self, context):
+        if self.reg in context:
+            return context[self.reg]
+        else:
+            raise NotConstant()
+
+
 # ConstExpr is duplicated with weaver.lang.Const
 # Const is for interface and used directly by user
 # ConstExpr is for compilation and used internally by compiler
@@ -532,17 +543,6 @@ class Eval1Empty:
         return []
 
 
-class Eval1Var:
-    def __init__(self, reg):
-        self.reg = reg
-
-    def eval1(self, context):
-        if self.reg in context:
-            return context[self.reg]
-        else:
-            raise NotConstant()
-
-
 def compile5_assign(assign, context):
     reg = context.query(assign.var)
     expr4 = assign.expr.compile4(context)
@@ -614,7 +614,7 @@ class VUpdateOp:
     def compile4(self, context):
         expr4 = self.expr.compile4(context)
         return Expr(
-            {self.vexpr_reg, *expr4.read_regs},
+            {StackContext.SEQUENCE, self.vexpr_reg, *expr4.read_regs},
             Eval1Abstract(),
             (
                 f"WV_UpdateV(&{context.stack.reg_map[self.vexpr_reg].expr6}, "
@@ -757,7 +757,7 @@ def compile4_total():
 def compile4_foreign_var(reg, context):
     return Expr(
         {reg},
-        Eval1Abstract(),
+        Eval1Var(reg),
         (
             context.stack.reg_map[reg].expr6,
             "$foreign." + context.stack.reg_map[reg].debug_name,
@@ -870,6 +870,14 @@ def compile5_inst(inst, context):
     init_stats = []
     for inst_reg in inst.inst_regs:
         initial_expr4 = context.stack.reg_map[inst_reg].initial_expr.compile4(context)
+        init_stats.append(
+            UpdateReg(
+                inst_reg,
+                Expr({StackContext.INSTANCE}, Eval1Abstract(), None),
+                False,
+                comment_only(f"write barrier"),
+            )
+        )
         init_stats.append(
             UpdateReg(
                 inst_reg,
@@ -1138,7 +1146,11 @@ def compile5_seq(seq, context):
         UpdateReg(
             StackContext.SEQUENCE,
             Expr(
-                offset4.read_regs | data4.read_regs | takeup4.read_regs,
+                offset4.read_regs
+                | data4.read_regs
+                | takeup4.read_regs
+                | window_left4.read_regs
+                | window_right4.read_regs,
                 Eval1Abstract(),
                 None,
             ),
@@ -1242,7 +1254,10 @@ def compile5a_layer(layer):
     if layer.seq is not None:
         instr_list += compile5_seq(layer.seq, layer.context)
     if layer.psm is not None:
-        instr_list += layer.psm.compile0(layer.state_var).compile5(layer.context)
+        instr_list += layer.psm.compile0(layer.state_var).compile5(layer.context) + [
+            UpdateReg(StackContext.RUNTIME, Expr(layer.state_var.compile4(layer.context).read_regs, Eval1Abstract(), None), False, code_comment(
+                f"if ({layer.state_var.compile4(layer.context).compile6[0]} == 0) goto G_Shower;", "broken transition fail"))
+        ]
 
     # the more "canonical" way to compile events is:
     # 0. context.event_map should store reg(aka int) as values, compile2_event_group should be
