@@ -1098,7 +1098,7 @@ def compile5_scanner(scanner, context):
         *[
             UpdateReg(
                 reg,
-                Expr(StackContext.HEADER, Eval1Abstract(), None),
+                Expr({StackContext.HEADER}, Eval1Abstract(), None),
                 False,
                 comment_only(
                     f"set header field ${context.stack.reg_map[reg].debug_name}"
@@ -1271,7 +1271,7 @@ def compile5a_layer(layer):
     instr_list += layer.prototype_event.compile0(event_var_map).compile5(layer.context)
     instr_list += layer.event.compile0(event_var_map).compile5(layer.context)
     instr_list += compile5_finalize(layer, layer.context)
-    return Block(instr_list, None, None, None)
+    return Block.from_codes(instr_list)
 
 
 def compile5_finalize(layer, context):

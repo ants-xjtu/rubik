@@ -24,7 +24,6 @@ print(
         stack.context,
         block_map,
         inst_decls,
-        len(stack.name_map),
         stack.entry.layer.context.layer_id,
     )
 )

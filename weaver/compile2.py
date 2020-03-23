@@ -61,7 +61,9 @@ def decl_header_reg(reg):
     return f"{prefix} _{reg.reg_id}{postfix};  // {reg.debug_name}"
 
 
-def compile7_stack(stack, block_map, inst_decls, layer_count, entry_id):
+def compile7_stack(stack, block_map, inst_decls, entry_id):
+    layer_count = len(block_map)
+
     prefix7 = "\n".join(
         [
             "#include <weaver.h>",

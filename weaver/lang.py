@@ -180,7 +180,7 @@ class ForeignNameMap(NameMapMixin):
         return ForeignVar(self.context.query(var))
 
 
-class ForeignVar(UniversalNumberOpMixin):
+class ForeignVar(VariableOpMixin):
     def __init__(self, reg):
         self.reg = reg
         self.virtual = False
