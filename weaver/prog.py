@@ -276,7 +276,7 @@ class Block:
 
     def proc_exit(self, proc) -> Block:
         if self.pred is None:
-            return Block(proc(self.instr_list), None, None, None)
+            return Block.from_codes(proc(self.instr_list))
         else:
             return Block(
                 self.instr_list,

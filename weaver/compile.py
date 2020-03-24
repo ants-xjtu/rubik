@@ -574,7 +574,7 @@ def compile5_if(if_stat, context):
     ]
 
 
-def compile5_assemble(context):
+def compile5_assemble(context, set_opt=True):
     return [
         UpdateReg(
             StackContext.SEQUENCE,
@@ -585,7 +585,7 @@ def compile5_assemble(context):
                 f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
                 "assemble",
             ),
-            SetOptFlag("assemble"),
+            SetOptFlag("assemble") if set_opt else None,
         )
     ]
 
@@ -1159,11 +1159,11 @@ def compile5_scanner(scanner, context):
     ]
 
 
-def compile5_seq(seq, context, buffer_data=None):
+def compile5_seq(seq, context, set_opt=True):
     offset4 = seq.offset.compile4(context)
     data4 = seq.data.compile4(context)
     takeup4 = seq.takeup.compile4(context)
-    buffer_data = buffer_data or context.buffer_data
+    buffer_data = context.buffer_data if set_opt else False
     window_left4 = seq.window_left.compile4(context)
     window_right4 = seq.window_right.compile4(context)
     return [
@@ -1195,7 +1195,7 @@ def compile5_seq(seq, context, buffer_data=None):
                     ]
                 ),
             ),
-            SetOptFlag("insert"),
+            SetOptFlag("insert") if set_opt else None,
         )
     ]
 
@@ -1418,7 +1418,6 @@ def optimize(instr_list, flags, context):
                     f"virtual assemble -> {data6[1]}",
                 ),
             )
-
             insert, assemble = flags["insert"], flags["assemble"]
             instr_list = (
                 instr_list[:create]
@@ -1439,6 +1438,48 @@ def optimize(instr_list, flags, context):
                 + instr_list[destroy + 1 :]
             )
         return instr_list
+
+    if "insert" in flags and "assemble" in flags:
+        data6 = context.seq.data.compile4(context).compile6
+        set_content = UpdateReg(
+            StackContext.SEQUENCE,
+            Expr({StackContext.HEADER}, Eval1Abstract(), None),
+            False,
+            code_comment(
+                f"{context.content_expr6} = {data6[0]};",
+                f"virtual assemble -> {data6[1]}",
+            ),
+        )
+        insert, assemble = flags["insert"], flags["assemble"]
+        offset4 = context.seq.offset.compile4(context)
+        data4 = context.seq.data.compile4(context)
+        takeup4 = context.seq.takeup.compile4(context)
+        instr_list = instr_list[:insert] + [
+            Branch(
+                Expr(
+                    {
+                        StackContext.SEQUENCE,
+                        *offset4.read_regs,
+                        *data4.read_regs,
+                        *takeup4.read_regs,
+                    },
+                    Eval1Abstract(),
+                    (
+                        f"WV_SeqEmptyAlign(&{context.prefetch_expr6}->seq, "
+                        f"{offset4.compile6[0]}, {data4.compile6[0]}, {takeup4.compile6[0]})",
+                        "EmptyAlign",
+                    ),
+                ),
+                compile5_seq(context.seq, context, False)
+                + instr_list[insert + 1 : assemble]
+                + [set_content]
+                + instr_list[assemble + 1 :],
+                compile5_seq(context.seq, context, True)
+                + instr_list[insert + 1 : assemble]
+                + compile5_assemble(context, False)
+                + instr_list[assemble + 1 :],
+            )
+        ]
 
     return instr_list
 
