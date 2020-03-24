@@ -70,9 +70,9 @@ class LayerContext:
         self.var_map = {}  # var(aka Bit/AutoVar/InstVar).var_id -> reg(aka int)
         self.structs = set()
         self.inst = None
+        self.seq = None
         self.perm_regs = []
         self.buffer_data = True
-        self.zero_based = None
         self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
         self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
@@ -476,7 +476,7 @@ def compile2_perm_layout(layout, context):
 
 
 def compile2_seq(seq, context):
-    context.zero_based = seq.zero_based
+    context.seq = seq
 
 
 def compile2_expr(expr, context):
@@ -585,6 +585,7 @@ def compile5_assemble(context):
                 f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
                 "assemble",
             ),
+            SetOptFlag("assemble"),
         )
     ]
 
@@ -833,6 +834,7 @@ class Inst:
         self.prefetch = PrefetchInst
         self.fetch = FetchInst
         self.create = CreateInst
+        self.create_light = CreateLightInst
         self.destroy = DestroyInst
         self.decl = DeclInst
 
@@ -847,6 +849,23 @@ class Inst:
 
     def compile5_create_extra(self, context):
         return []
+
+
+class CreateLightInst:
+    def __init__(self, context):
+        self.compile7 = code_comment(
+            f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+            "create light instance",
+        )
+
+
+class CreateLightBiInst:
+    def __init__(self, context):
+        self.compile7 = code_comment(
+            f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});\n"
+            f"{context.inst_expr6}->flag = 0;",
+            "create light bidirectional instance",
+        )
 
 
 def compile5_inst(inst, context):
@@ -891,7 +910,11 @@ def compile5_inst(inst, context):
         )
     create_route = [
         UpdateReg(
-            StackContext.INSTANCE, abstract_expr, True, inst.create(context).compile7,
+            StackContext.INSTANCE,
+            abstract_expr,
+            True,
+            inst.create(context).compile7,
+            SetOptFlag("create"),
         ),
         *init_stats,
         *inst.compile5_create_extra(context),
@@ -960,7 +983,7 @@ class CreateInst:
                 [
                     context.insert_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.zero_based)});",
+                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
@@ -977,6 +1000,7 @@ class BiInst:
         self.key_regs = key_regs1 + key_regs2
         self.prefetch = PrefetchInst  # same as Inst
         self.create = CreateBiInst
+        self.create_light = CreateLightBiInst
         self.fetch = FetchBiInst
         self.destroy = DestroyBiInst
         self.decl = DeclBiInst
@@ -1052,8 +1076,8 @@ class CreateBiInst:
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
                     f"{context.inst_expr6}->flag = 0;",
                     f"{context.inst_expr6}->flag_rev = 1;",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.zero_based)});",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)}, {int(context.zero_based)});",
+                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
+                    f"WV_InitSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
@@ -1135,11 +1159,11 @@ def compile5_scanner(scanner, context):
     ]
 
 
-def compile5_seq(seq, context):
+def compile5_seq(seq, context, buffer_data=None):
     offset4 = seq.offset.compile4(context)
     data4 = seq.data.compile4(context)
     takeup4 = seq.takeup.compile4(context)
-    buffer_data = context.buffer_data
+    buffer_data = buffer_data or context.buffer_data
     window_left4 = seq.window_left.compile4(context)
     window_right4 = seq.window_right.compile4(context)
     return [
@@ -1171,6 +1195,7 @@ def compile5_seq(seq, context):
                     ]
                 ),
             ),
+            SetOptFlag("insert"),
         )
     ]
 
@@ -1317,6 +1342,7 @@ def compile5_finalize(layer, context):
                 abstract_expr,
                 True,
                 context.inst.destroy(layer.context).compile7,
+                SetOptFlag("destroy"),
             )
         ]
     if layer.psm is not None:
@@ -1356,20 +1382,70 @@ def compile5_next_list(next_list, context):
 
 # opt
 class OptimizeContext:
-    def __init__(self, instr_list):
-        self.instr_list = instr_list
-        self.flag_map = {}
-        self.triggered = False
-
-    def set_instr_list(self, instr_list):
-        self.instr_list = instr_list
-        self.triggered = True
+    def __init__(self, flag_map, index):
+        self.flag_map = flag_map
+        self.index = index
 
 
-def optimize_driver(instr_list):
-    context = OptimizeContext(instr_list)
-    for instr in instr_list:
-        instr.opt(context)
-        if context.triggered:
-            break
-    return context.instr_list
+class OptimizeDriver:
+    def __init__(self, context):
+        self.context = context
+
+    def __call__(self, instr_list):
+        flag_map = {}
+        for index, instr in enumerate(instr_list):
+            instr.opt(OptimizeContext(flag_map, index))
+        return optimize(instr_list, flag_map, self.context)
+
+
+def optimize(instr_list, flags, context):
+    if "create" in flags and "destroy" in flags:
+        create_light = UpdateReg(
+            StackContext.INSTANCE,
+            abstract_expr,
+            True,
+            context.inst.create_light(context).compile7,
+        )
+        create, destroy = flags["create"], flags["destroy"]
+        if "assemble" in flags:
+            data6 = context.seq.data.compile4(context).compile6
+            set_content = UpdateReg(
+                StackContext.SEQUENCE,
+                Expr({StackContext.HEADER}, Eval1Abstract(), None),
+                False,
+                code_comment(
+                    f"{context.content_expr6} = {data6[0]};",
+                    f"virtual assemble -> {data6[1]}",
+                ),
+            )
+
+            insert, assemble = flags["insert"], flags["assemble"]
+            instr_list = (
+                instr_list[:create]
+                + [create_light]
+                + instr_list[create + 1 : insert]
+                + instr_list[insert + 1 : assemble]
+                + [set_content]
+                + instr_list[assemble + 1 : destroy]
+                + instr_list[destroy + 1 :]
+            )
+        elif "insert" in flags:
+            insert = flags["insert"]
+            instr_list = (
+                instr_list[:create]
+                + [create_light]
+                + instr_list[create + 1 : insert]
+                + instr_list[insert + 1 : destroy]
+                + instr_list[destroy + 1 :]
+            )
+        return instr_list
+
+    return instr_list
+
+
+class SetOptFlag:
+    def __init__(self, name):
+        self.name = name
+
+    def opt(self, context):
+        context.flag_map[self.name] = context.index

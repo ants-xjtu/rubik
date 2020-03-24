@@ -1,13 +1,15 @@
 from sys import argv
 from importlib import import_module
 
-from weaver.compile import compile5a_layer, optimize_driver
+from weaver.compile import compile5a_layer, OptimizeDriver
 from weaver.compile2 import compile7_stack, compile7w_stack
 
 
 stack = import_module(argv[1]).stack
 block_map = {
-    layer.layer.context.layer_id: compile5a_layer(layer.layer).optimize(optimize_driver)
+    layer.layer.context.layer_id: compile5a_layer(layer.layer).optimize(
+        OptimizeDriver(layer.layer.context)
+    )
     for layer in stack.name_map.values()
 }
 inst_decls = {
