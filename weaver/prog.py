@@ -26,7 +26,7 @@ class NotConstant(Exception):
 
 
 class UpdateReg:
-    def __init__(self, reg, expr, is_command, compile7):
+    def __init__(self, reg, expr, is_command, compile7, opt_handler=None):
         self.reg = reg
         self.expr = expr
         self.read_regs = expr.read_regs
@@ -34,6 +34,7 @@ class UpdateReg:
         self.is_command = is_command
         self.compile7 = compile7
         self.is_choice = False
+        self.opt_handler = opt_handler
 
     def eval2(self, context):
         if not self.is_command:
@@ -41,6 +42,10 @@ class UpdateReg:
                 context[self.reg] = self.expr.eval1(context)
             except NotConstant:
                 pass
+
+    def opt(self, context):
+        if self.opt_handler is not None:
+            self.opt_handler.opt(context)
 
 
 class Branch:
@@ -70,6 +75,9 @@ class Branch:
     @property
     def compile7(self):
         return compile7_branch(self)
+
+    def opt(self, context):
+        pass
 
 
 Reg = int

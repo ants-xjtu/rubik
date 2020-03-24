@@ -53,7 +53,7 @@ def ip_parser():
     FRAG = PSMState()
     ip.psm = PSM(DUMP, FRAG)
     ip.psm.dump = (DUMP >> DUMP) + Pred(
-        (ip.header.dont_frag == 1)
+        ((ip.header.dont_frag == 1) & (ip.temp.offset == 0))
         | ((ip.header.more_frag == 0) & (ip.temp.offset == 0))
     )
     ip.psm.frag = (DUMP >> FRAG) + Pred(

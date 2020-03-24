@@ -1255,8 +1255,19 @@ def compile5a_layer(layer):
         instr_list += compile5_seq(layer.seq, layer.context)
     if layer.psm is not None:
         instr_list += layer.psm.compile0(layer.state_var).compile5(layer.context) + [
-            UpdateReg(StackContext.RUNTIME, Expr(layer.state_var.compile4(layer.context).read_regs, Eval1Abstract(), None), False, code_comment(
-                f"if ({layer.state_var.compile4(layer.context).compile6[0]} == 0) goto G_Shower;", "broken transition fail"))
+            UpdateReg(
+                StackContext.RUNTIME,
+                Expr(
+                    layer.state_var.compile4(layer.context).read_regs,
+                    Eval1Abstract(),
+                    None,
+                ),
+                False,
+                code_comment(
+                    f"if ({layer.psm.trans_var.compile4(layer.context).compile6[0]} == 0) goto G_Shower;",
+                    "broken transition fail",
+                ),
+            )
         ]
 
     # the more "canonical" way to compile events is:
@@ -1341,3 +1352,24 @@ def compile5_next_list(next_list, context):
         )
         stats += [Branch(pred.compile4(context), [jump], [],)]
     return stats
+
+
+# opt
+class OptimizeContext:
+    def __init__(self, instr_list):
+        self.instr_list = instr_list
+        self.flag_map = {}
+        self.triggered = False
+
+    def set_instr_list(self, instr_list):
+        self.instr_list = instr_list
+        self.triggered = True
+
+
+def optimize_driver(instr_list):
+    context = OptimizeContext(instr_list)
+    for instr in instr_list:
+        instr.opt(context)
+        if context.triggered:
+            break
+    return context.instr_list
