@@ -1,25 +1,28 @@
-import importlib
-import sys
-from weaver.writer_context import GlobalContext
+from sys import argv
+from importlib import import_module
+
+from weaver.compile import compile5a_layer, OptimizeDriver
+from weaver.compile2 import compile7_stack, compile7w_stack
 
 
-conf = importlib.import_module(sys.argv[1])
-stack = conf.stack
-stack_entry = conf.stack_entry
-stack_map = conf.stack_map
+stack = import_module(argv[1]).stack
+block_map = {
+    layer.layer.context.layer_id: compile5a_layer(layer.layer).optimize(
+        OptimizeDriver(layer.layer.context)
+    )
+    for layer in stack.name_map.values()
+}
+inst_decls = {
+    layer.layer.context.layer_id: layer.layer.context.inst.decl(layer.layer.context)
+    for layer in stack.name_map.values()
+    if layer.layer.context.inst is not None
+}
 
-nexti_map = {}
-compiled = {}
-for name, allocated_bundle in stack.items():
-    compiled[name] = allocated_bundle.compile_bundle(name, stack_map.get(name, None))
-    compiled[name].register_nexti(nexti_map)
-
-context = GlobalContext({nexti: compiled[name].recurse for nexti, name in nexti_map.items()})
-for bundle in compiled.values():
-    bundle.execute_in(context)
-context.execute_all()
-
-print('/* Weaver Whitebox Code Template */')
-print(context.write_template())
-print('/* Weaver Auto-generated Blackbox Code */')
-print(context.write_all(compiled[stack_entry].recurse))
+print("/* Weaver Whitebox Code Template */")
+print(compile7w_stack(stack.context))
+print("/* Weaver Auto-generated Blackbox Code */")
+print(
+    compile7_stack(
+        stack.context, block_map, inst_decls, stack.entry.layer.context.layer_id,
+    )
+)

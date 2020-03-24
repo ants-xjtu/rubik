@@ -8,9 +8,10 @@ bb := weaver_blackbox.c
 wb := weaver_whitebox.template.c
 sep = Weaver Auto-generated Blackbox Code
 
-### TARGET ###
 BUILD_DIR = ./build/
 APP = procpkts
+TARGET_FLAG = -DWV_TARGET_$(T)
+export TARGET_FLAG
 
 ### GCC ###
 GCC = gcc
@@ -20,8 +21,8 @@ GCC_OPT = -m64 # -Wall -DNEWEV -Werror
 #DBG_OPT = -DDBGMSG -DDBGFUNC -DSTREAM -DSTATE
 #DBG_OPT += -DPKTDUMP
 #DBG_OPT += -DDUMP_STREAM
-#GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
-GCC_OPT += -DNDEBUG -O3 -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+# GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += -O3 -DNDEBUG -DNETSTAT -DINFO -DDBGERR -DDBGCERR
 GCC_OPT += $(DBG_OPT)
 
 ### LIBRARIES AND INCLUDES ###
@@ -69,7 +70,7 @@ SRCS = $(bb) $(A) native/drivers/$(T).c native/runtime/libwvrt.a
 all: $(APP)
 
 $(APP): $(SRCS)
-	$(GCC) $(GCC_OPT) -o $@ $^ $(INC) $(LIBS) $(LIB_FLAGS)
+	$(GCC) $(GCC_OPT) -o $@ $^ $(INC) $(LIBS) $(LIB_FLAGS) $(TARGET_FLAG)
 
 native/runtime/libwvrt.a:
 	$(MAKE) -C native/runtime
@@ -85,4 +86,3 @@ endif
 gen:
 	# https://stackoverflow.com/a/7104422
 	python3.7 -m weaver $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
-
