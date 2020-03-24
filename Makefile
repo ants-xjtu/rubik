@@ -39,6 +39,10 @@ ifeq ($(T), dpdk)
 ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
+
+NIC ?= XL710
+FWD ?= FWD
+PERF ?= EVAL_PERF
 SRC_DIR = $(PWD)
 SRCS = $(bb) $(A) native/drivers/$(T).c $(SRC_DIR)/native/runtime/libwvrt.a
 # DPDK LIBRARY and HEADER
@@ -47,7 +51,7 @@ DPDK_INC = -I$(SRC_DIR)/native/ -I$(SRC_DIR)/native/runtime -I$(SRC_DIR)/native/
 # DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
 # DPDK_LIB=$(RTE_SDK)/$(RTE_TARGET)/lib/
 include $(RTE_SDK)/mk/rte.vars.mk
-CFLAGS += $(DPDK_INC) -DXL710 $(TARGET_FLAG) -O3
+CFLAGS += $(DPDK_INC) -D$(FWD) -D$(NIC) -D$(PERF) $(TARGET_FLAG) -O3
 LDFLAGS += -lpcre2-8
 # DPDK_MACHINE_FLAGS=$(MACHINE_CFLAGS)
 # DPDK_LIB_FLAGS = -ldpdk -ldl -lnuma -lpthread

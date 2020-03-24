@@ -61,7 +61,7 @@ static inline WV_U8 _AssertNodes(WV_Seq* seq)
 {
     // printf("%u\n", seq->post_start);
     for (WV_U8 i = 0; i < seq->used_count; i += 1) {
-        assert(seq->nodes[i].left < seq->nodes[i].right);
+        // assert(seq->nodes[i].left < seq->nodes[i].right);
         assert(seq->nodes[i].left >= seq->offset);
         assert(seq->nodes[i].right - seq->offset <= WV_CONFIG_SeqBufferSize);
     }
