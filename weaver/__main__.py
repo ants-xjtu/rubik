@@ -7,6 +7,7 @@ from weaver.compile2 import compile7_stack, compile7w_stack
 
 stack = import_module(argv[1]).stack
 block_map = {
+    # layer.layer.context.layer_id: compile5a_layer(layer.layer)
     layer.layer.context.layer_id: compile5a_layer(layer.layer).optimize(
         OptimizeDriver(layer.layer.context)
     )

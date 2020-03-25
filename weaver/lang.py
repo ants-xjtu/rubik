@@ -792,7 +792,8 @@ class EqualOp(NumberOpMixin, Op2VirtualMixin):
         return f"({self.expr1}) == ({self.expr2})"
 
     def compile4(self, context):
-        return compile4_op2("equal", self.expr1, self.expr2, context)
+        x =  compile4_op2("equal", self.expr1, self.expr2, context)
+        return x
 
 
 class LogicalAndOp(NumberOpMixin, Op2VirtualMixin):

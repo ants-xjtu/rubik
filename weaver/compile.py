@@ -565,9 +565,10 @@ def compile5_if(if_stat, context):
         pred = VUpdateOp(context.vexpr_map[id(if_stat.pred)], if_stat.pred)
     else:
         pred = if_stat.pred
+    pred4 = pred.compile4(context)
     return [
         Branch(
-            pred.compile4(context),
+            pred4,
             if_stat.yes_action.compile5(context),
             if_stat.no_action.compile5(context),
         )

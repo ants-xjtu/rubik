@@ -53,7 +53,7 @@ class Branch:
         self.pred = pred
         self.yes_list = yes_list
         self.no_list = no_list
-        self.read_regs = pred.read_regs
+        self.read_regs = set(pred.read_regs)
         self.write_regs = set()
         for instr in yes_list + no_list:
             self.read_regs |= instr.read_regs
