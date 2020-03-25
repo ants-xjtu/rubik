@@ -1473,6 +1473,7 @@ def optimize(instr_list, flags, context):
                 ),
                 compile5_seq(context.seq, context, False)
                 + instr_list[insert + 1 : assemble]
+                + compile5_assemble(context, False)
                 + [set_content]
                 + instr_list[assemble + 1 :],
                 compile5_seq(context.seq, context, True)

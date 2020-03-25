@@ -169,7 +169,7 @@ def compile7_stack(stack, block_map, inst_decls, entry_id):
                     if layer in inst_decls
                 ],
                 *[
-                    f"WV_U8 b{block_id}_t;"
+                    f"WV_U16 b{block_id}_t;"
                     for block_id in blocks7
                     if raw_blocks7[block_id] != blocks7[block_id]
                 ],
