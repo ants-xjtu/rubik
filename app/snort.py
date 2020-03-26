@@ -12,3 +12,8 @@ stack.tcp.event.report = If(1) >> (
     + Assign(report_status.content, stack.tcp.sdu)
     + Call(report_status)
 )
+
+class count_ip(layout):
+    dummy = Bit(8)
+
+stack.ip.event.report = If(1) >> Call(count_ip)

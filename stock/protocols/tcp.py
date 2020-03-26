@@ -198,7 +198,9 @@ def tcp_parser(ip):
     )
     tcp.psm.hs3 = (SYN_RCV >> EST) + Pred(tcp.v.header.ack == 1)
 
-    tcp.psm.buffering = (EST >> EST) + Pred(tcp.header.fin == 0)
+    tcp.psm.buffering = (EST >> EST) + Pred(
+        (tcp.header.fin == 0) & (tcp.header.rst == 0)
+    )
 
     tcp.psm.wv1 = (EST >> FIN_WAIT_1) + Pred(tcp.v.header.fin == 1)
     tcp.psm.wv2 = (FIN_WAIT_1 >> CLOSE_WAIT) + Pred(

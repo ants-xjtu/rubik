@@ -10,4 +10,4 @@ stack.udp = udp_parser()
 
 stack += (stack.eth >> stack.ip) + Predicate(1)
 stack += (stack.ip >> stack.tcp) + Predicate(stack.ip.header.protocol == 6)
-stack += (stack.ip >> stack.udp) + Predicate(stack.ip.header.protocol == 17)
+# stack += (stack.ip >> stack.udp) + Predicate(stack.ip.header.protocol == 17)

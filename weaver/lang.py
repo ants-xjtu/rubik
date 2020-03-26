@@ -168,7 +168,7 @@ class Layer:
         if self.layer.perm is not None:
             self.perm = ForeignNameMap(self.layer.perm, self.layer.context)
         self.event = self.layer.event
-        # self.current_state = self.layer.state_var
+        self.current_state = self.layer.state_var
         self.sdu = prototype.sdu
 
     def __rshift__(self, dst_layer):
@@ -252,7 +252,7 @@ class VirtualExprIndicator(VirtualExprOpMixin):
         return f"(virtual){self.var}"
 
     def compile4(self, context):
-        return compile4_var(self.var.var_id, context)
+        return self.var.compile4(context)
 
 
 # common pipeline interfaces
