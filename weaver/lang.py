@@ -170,6 +170,7 @@ class Layer:
         self.event = self.layer.event
         self.current_state = self.layer.state_var
         self.sdu = prototype.sdu
+        self.payload_len = prototype.payload_len
 
     def __rshift__(self, dst_layer):
         return Direction(self, dst_layer)
@@ -208,7 +209,8 @@ class Prototype:
         self.sdu = ContentExpr()
 
         self.current_state = Bit(8, init=0)
-        self.to_active = Bit(8)
+        self.rev_flag = Bit(8)
+        self.to_active = self.rev_flag == 1
         self.to_passive = NotOp(self.to_active)
 
         self.v = VDomain(self)
@@ -792,7 +794,7 @@ class EqualOp(NumberOpMixin, Op2VirtualMixin):
         return f"({self.expr1}) == ({self.expr2})"
 
     def compile4(self, context):
-        x =  compile4_op2("equal", self.expr1, self.expr2, context)
+        x = compile4_op2("equal", self.expr1, self.expr2, context)
         return x
 
 

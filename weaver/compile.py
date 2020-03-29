@@ -824,7 +824,7 @@ def compile3_inst(prototype, context):
             [extract(var) for var in vars1],
             [extract(var) for var in vars2],
             context.perm_regs,
-            AutoVar.from_bit(prototype.to_active),
+            AutoVar.from_bit(prototype.rev_flag),
         )
 
 
