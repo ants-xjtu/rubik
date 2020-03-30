@@ -5,7 +5,6 @@ from stock.protocols.tcp import tcp_parser
 from stock.protocols.ip import ip_parser
 from stock.protocols.udp import udp_parser
 from stock.protocols.gre import gre_parser
-from stock.protocols.pure_ip import pure_ip_parser
 from stock.protocols.ppp import ppp_parser
 from stock.protocols.pptp import pptp_parser
 from stock.protocols.tcp import tcp_parser

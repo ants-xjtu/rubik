@@ -118,8 +118,6 @@ def ppp_parser(ip, gre):
         + (If(PPP.header.short_protocol == 0xC021) >> PPP_LCP_header)
     )
 
-    PPP.seq = Sequence(meta=Const(0), data=PPP.payload, data_len=PPP.payload_len)
-
     PPP.temp = PPP_temp_data
 
     PPP.preprocess = (
@@ -163,7 +161,6 @@ def ppp_parser(ip, gre):
 
     PPP.psm.tunneling = (SESSION >> SESSION) + Predicate(PPP.temp.protocol == 0x0021)
 
-    PPP.event.asm = If(PPP.psm.tunneling) >> Assemble()
     PPP.event.switch_to_short = If(PPP.psm.a_p_AFCF_acked) >> Assign(
         gre.perm.short_PPP, 1
     )

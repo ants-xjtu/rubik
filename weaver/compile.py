@@ -1322,39 +1322,37 @@ def compile5a_layer(layer):
     ]
     instr_list += layer.prototype_event.compile0(event_var_map).compile5(layer.context)
     instr_list += layer.event.compile0(event_var_map).compile5(layer.context)
+    instr_list += [
+        UpdateReg(
+            StackContext.RUNTIME,
+            abstract_expr,
+            False,
+            f"current = {layer.context.content_expr6};",
+        )
+    ] + compile5_next_list(layer.next_list, layer.context)
     instr_list += compile5_finalize(layer, layer.context)
     return Block.from_codes(instr_list)
 
 
 def compile5_finalize(layer, context):
-    next_list5 = compile5_next_list(layer.next_list, context)
-    accept_list5 = [
-        UpdateReg(
-            StackContext.RUNTIME,
-            abstract_expr,
-            False,
-            f"current = {context.content_expr6};",
-        )
-    ] + next_list5
-    if context.inst is not None:
-        accept_list5 += [
-            UpdateReg(
-                StackContext.INSTANCE,
-                abstract_expr,
-                True,
-                context.inst.destroy(layer.context).compile7,
-                SetOptFlag("destroy"),
-            )
-        ]
     if layer.psm is not None:
-        accept_list5 = [
+        return [
             Branch(
                 layer.psm.compile0_accept_pred(layer.state_var).compile4(context),
-                accept_list5,
+                [
+                    UpdateReg(
+                        StackContext.INSTANCE,
+                        abstract_expr,
+                        True,
+                        context.inst.destroy(layer.context).compile7,
+                        SetOptFlag("destroy"),
+                    )
+                ],
                 [],
             )
         ]
-    return accept_list5
+    else:
+        return []
 
 
 def compile5_next_list(next_list, context):
@@ -1377,7 +1375,7 @@ def compile5_next_list(next_list, context):
                 f"jump to next layer #{dst_layer.context.layer_id}",
             ),
         )
-        stats += [Branch(pred.compile4(context), [jump], [],)]
+        stats = [Branch(pred.compile4(context), [jump], stats)]
     return stats
 
 

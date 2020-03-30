@@ -171,6 +171,7 @@ class Layer:
         self.current_state = self.layer.state_var
         self.sdu = prototype.sdu
         self.payload_len = prototype.payload_len
+        self.psm = prototype.psm
 
     def __rshift__(self, dst_layer):
         return Direction(self, dst_layer)
