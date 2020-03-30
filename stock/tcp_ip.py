@@ -10,8 +10,8 @@ stack.udp = udp_parser()
 
 stack += (stack.eth >> stack.ip) + Predicate(1)
 stack += (stack.ip >> stack.tcp) + Predicate(
-    (stack.ip.psm.dump | stack.ip.psm.last) & stack.ip.header.protocol == 6
+    (stack.ip.psm.dump | stack.ip.psm.last) & (stack.ip.header.protocol == 6)
 )
 stack += (stack.ip >> stack.udp) + Predicate(
-    (stack.ip.psm.dump | stack.ip.psm.last) & stack.ip.header.protocol == 17
+    (stack.ip.psm.dump | stack.ip.psm.last) & (stack.ip.header.protocol == 17)
 )

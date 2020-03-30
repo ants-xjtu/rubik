@@ -1375,7 +1375,9 @@ def compile5_next_list(next_list, context):
                 f"jump to next layer #{dst_layer.context.layer_id}",
             ),
         )
+        # print('before', stats)
         stats = [Branch(pred.compile4(context), [jump], stats)]
+        # print(stats, stats[0].no_list)
     return stats
 
 
