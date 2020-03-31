@@ -81,7 +81,7 @@ class PPP_LCP_MRU_option(layout):
 
 
 class PPP_temp_data(layout):
-    protocol = UInt(32)
+    protocol = Bit(32)
 
 
 def ppp_parser(ip, gre):

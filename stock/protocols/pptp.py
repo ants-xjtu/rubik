@@ -102,7 +102,7 @@ def pptp_parser(ip):
             echo_request,
             echo_reply,
         ],
-        False,
+        Const(0),
     )
     pptp.selector = ([ip.header.saddr], [ip.header.daddr])
 

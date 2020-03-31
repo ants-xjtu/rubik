@@ -418,26 +418,47 @@ class ConditionalParse:
 class TaggedLoop:
     def __init__(self, tag_reg, scanner_map, pred4):
         # I'm lazy
-        assert tag_reg.byte_length == 1
-        self.compile7 = (
-            "do "
-            + indent_join(
-                [
-                    f"{tag_reg.expr6} = current.cursor[0];",
-                    "current = WV_SliceAfter(current, 1);",
-                    f"switch ({tag_reg.expr6}) "
-                    + indent_join(
-                        (f"case {value}: " if value is not None else "default: ")
+        assert tag_reg.byte_length in [1, 2]
+        if tag_reg.byte_length == 1:
+            self.compile7 = (
+                "do "
+                + indent_join(
+                    [
+                        f"{tag_reg.expr6} = current.cursor[0];",
+                        "current = WV_SliceAfter(current, 1);",
+                        f"switch ({tag_reg.expr6}) "
                         + indent_join(
-                            [*[action.compile7 for action in scanner], "break;"]
-                        )
-                        for value, scanner in scanner_map.items()
-                    ),
-                    f"// WHILE {pred4.compile6[1]}",
-                ]
+                            (f"case {value}: " if value is not None else "default: ")
+                            + indent_join(
+                                [*[action.compile7 for action in scanner], "break;"]
+                            )
+                            for value, scanner in scanner_map.items()
+                        ),
+                        f"// WHILE {pred4.compile6[1]}",
+                    ]
+                )
+                + f" while ({pred4.compile6[0]});"
             )
-            + f" while ({pred4.compile6[0]});"
-        )
+        else:
+            self.compile7 = (
+                "do "
+                + indent_join(
+                    [
+                        f"{tag_reg.expr6} = WV_NToH32(current.cursor[0] << 8 + current.cursor[1]);",
+                        "current = WV_SliceAfter(current, 2);",
+                        f"switch ({tag_reg.expr6}) "
+                        + indent_join(
+                            (f"case {value}: " if value is not None else "default: ")
+                            + indent_join(
+                                [*[action.compile7 for action in scanner], "break;"]
+                            )
+                            for value, scanner in scanner_map.items()
+                        ),
+                        f"// WHILE {pred4.compile6[1]}",
+                    ]
+                )
+                + f" while ({pred4.compile6[0]});"
+            )
 
 
 def compile1_any_until(any_until, context):
@@ -561,7 +582,11 @@ class Eval1Empty:
 
 
 def compile5_assign(assign, context):
-    reg = context.query(assign.var)
+    # todo
+    if hasattr(assign.var, "var_id"):
+        reg = context.query(assign.var)
+    else:
+        reg = assign.var.reg
     expr4 = assign.expr.compile4(context)
     text = code_comment(
         f"{context.stack.reg_map[reg].expr6} = {expr4.compile6[0]};",
@@ -1001,7 +1026,9 @@ class CreateInst:
                 [
                     context.insert_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
+                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});"
+                    if context.seq is not None
+                    else "// no seq",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
@@ -1094,8 +1121,14 @@ class CreateBiInst:
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
                     f"{context.inst_expr6}->flag = 0;",
                     f"{context.inst_expr6}->flag_rev = 1;",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
-                    f"WV_InitSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
+                    *(
+                        [
+                            f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
+                            f"WV_InitSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)}, {int(context.seq.zero_based)});",
+                        ]
+                        if context.seq is not None
+                        else ["// no seq"]
+                    ),
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
@@ -1110,8 +1143,14 @@ class DestroyBiInst:
             [
                 context.remove_stat7,
                 context.remove_rev_stat7,
-                f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});",
-                f"WV_CleanSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)});",
+                *(
+                    [
+                        f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});",
+                        f"WV_CleanSeq(&{context.inst_expr6}->seq_rev, {int(context.buffer_data)});",
+                    ]
+                    if context.seq is not None
+                    else ["// no seq"]
+                ),
                 f"WV_Free({context.inst_expr6});",
             ]
         )
@@ -1122,7 +1161,9 @@ class DestroyInst:
         self.compile7 = "\n".join(
             [
                 context.remove_stat7,
-                f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});",
+                f"WV_CleanSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)});"
+                if context.seq is not None
+                else "// no seq",
                 f"WV_Free({context.inst_expr6});",
             ]
         )

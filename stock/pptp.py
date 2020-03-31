@@ -15,7 +15,7 @@ stack = Stack()
 stack.eth = eth_parser()
 stack.ip1 = ip_parser()
 stack.tcp_ctl = tcp_parser(stack.ip1)
-# stack.pptp = pptp_parser(stack.ip1)
+stack.pptp = pptp_parser(stack.ip1)
 stack.gre = gre_parser(stack.ip1)
 stack.ppp = ppp_parser(stack.ip1, stack.gre)
 stack.ip2 = ip_parser()
@@ -24,13 +24,13 @@ stack.tcp = tcp_parser(stack.ip2)
 
 stack += (stack.eth >> stack.ip1) + Predicate(1)
 stack += (stack.ip1 >> stack.tcp_ctl) + Predicate(
-    (stack.ip.psm.dump | stack.ip.psm.last) & (stack.ip.header.protocol == 6)
+    (stack.ip1.psm.dump | stack.ip1.psm.last) & (stack.ip1.header.protocol == 6)
 )
-# stack += (stack.tcp >> stack.pptp) + Predicate(
-#     stack.tcp.psm.buffering & (stack.tcp.sdu.length > 0)
-# )
+stack += (stack.tcp >> stack.pptp) + Predicate(
+    stack.tcp.psm.buffering & (stack.tcp.sdu.length != 0)
+)
 stack += (stack.ip1 >> stack.gre) + Predicate(
-    (stack.ip.psm.last | stack.ip.psm.dump) & (stack.ip.header.protocol == 47)
+    (stack.ip1.psm.last | stack.ip1.psm.dump) & (stack.ip1.header.protocol == 47)
 )
 stack += (stack.gre >> stack.ppp) + Predicate(
     (stack.gre.header.protocol == 0x880B) & stack.gre.psm.tunneling

@@ -26,5 +26,6 @@ Finally, run built executable `procpkts`.
 Non-exhuasted willing list
 * properly-designed prototype-provided and stack-defined event system
 * fully-implemented "strict mode & loose mode"
-* non-sequence instance
+* ~~non-sequence instance~~
 * insert-assemble-(no next & callback) optimization pattern
+* foreign UInt may cause bug
