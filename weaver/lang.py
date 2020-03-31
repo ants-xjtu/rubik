@@ -327,6 +327,7 @@ class Bit(VariableOpMixin):
         self.var_id = object()
 
         self.virtual = False
+        self.is_uint = False
 
     def __str__(self):
         if isinstance(self.length, int):
@@ -347,6 +348,7 @@ class UInt(VariableOpMixin):
         self.length = length
         self.virtual = False
         self.var_id = object()
+        self.is_uint = True
 
     def __str__(self):
         return f"$<_uint{self.length}>"
@@ -536,6 +538,7 @@ class HeaderAction(NameMapMixin):
         self.actions = actions
         self.name_map = {}
         for action in actions:
+            # print(action)
             self.name_map = {**self.name_map, **action.name_map}
         super().__init__()
 

@@ -307,13 +307,14 @@ class InstReg:
 
 # header actions
 class LocateStruct:
-    def __init__(self, struct_id, struct_length, parsed_reg):
+    def __init__(self, struct_id, struct_length, parsed_reg, ntoh_init7_list):
         self.compile7 = "\n".join(
             [
                 f"{compile6_struct_expr(struct_id)} = (WV_Any)current.cursor;",
                 f"current = WV_SliceAfter(current, {struct_length});",
                 f"{parsed_reg.expr6} = 1;",
-            ]
+                *ntoh_init7_list,
+            ],
         )
 
 
@@ -340,13 +341,17 @@ def compile1_layout(layout, context):
     pack_length = 0
     struct_length = 0
     actions = []
+    ntoh_init7_list = []
     for name, bit in layout.field_list:
         if not isinstance(bit.length, int):
             assert pack_length == 0
             if struct_length != 0:
                 struct_id = context.finalize_struct()
-                actions.append(LocateStruct(struct_id, struct_length, parsed_reg))
+                actions.append(
+                    LocateStruct(struct_id, struct_length, parsed_reg, ntoh_init7_list)
+                )
                 struct_length = 0
+                ntoh_init7_list = []
             context.alloc_temp_reg(
                 AutoVar.from_bit(bit), layout.debug_name + "." + name
             )
@@ -357,6 +362,16 @@ def compile1_layout(layout, context):
             assert bits_pack == []
             context.alloc_header_reg(bit, layout.debug_name + "." + name)
             struct_length += bit.length // 8
+
+            if bit.is_uint:
+                compile2_uint(bit, context)
+                ntoh_var = context.ntoh_map[bit.var_id]
+                var_id = bit.var_id
+                ntoh_init7_list.append(
+                    f"{context.stack.reg_map[context.query(ntoh_var)].expr6} = "
+                    f"WV_NToH{ntoh_var.byte_length * 8}"
+                    f"({context.stack.reg_map[context.var_map[var_id]].expr6});",
+                )
         else:
             bits_pack.append((name, bit))
             pack_length += bit.length
@@ -370,7 +385,9 @@ def compile1_layout(layout, context):
                 struct_length += 1
     if struct_length != 0:
         struct_id = context.finalize_struct()
-        actions.append(LocateStruct(struct_id, struct_length, parsed_reg))
+        actions.append(
+            LocateStruct(struct_id, struct_length, parsed_reg, ntoh_init7_list)
+        )
     return actions
 
 
@@ -1151,9 +1168,7 @@ def compile5_scanner(scanner, context):
                 context.query(ntoh_var),
                 Expr({context.var_map[var_id]}, Eval1Abstract(), None),
                 False,
-                f"{context.stack.reg_map[context.query(ntoh_var)].expr6} = "
-                f"WV_NToH{ntoh_var.byte_length * 8}"
-                f"({context.stack.reg_map[context.var_map[var_id]].expr6});",
+                comment_only(f"set {ntoh_var.compile4(context).compile6[1]}"),
             )
             for var_id, ntoh_var in context.ntoh_map.items()
         ],
@@ -1206,7 +1221,7 @@ def compile3a_prototype(prototype, stack, layer_id, extra_event):
     context = LayerContext(layer_id, stack)
     scanner = prototype.header.compile1(context)
 
-    prototype.header.compile2(context)
+    # prototype.header.compile2(context)
     if prototype.temp is not None:
         compile2_temp_layout(prototype.temp, context)
     if prototype.perm is not None:

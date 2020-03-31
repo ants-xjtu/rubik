@@ -37,22 +37,24 @@ class GRE_temp(layout):
 
 def gre_parser(ip):
     gre = ConnectionOriented()
-    gre.header = (
-        GRE_header
-        + (If(gre.header.S) >> GRE_sequence_number)
-        + (If(gre.header.A) >> GRE_ack_number)
-    )
+
+    gre.header = GRE_header
+    gre.header += If(gre.header.S) >> GRE_sequence_number
+    gre.header += If(gre.header.A) >> GRE_ack_number
+
     gre.selector = ([ip.header.saddr], [ip.header.daddr])
+
     gre.perm = GRE_perm
     gre.temp = GRE_temp
-    gre.preprocess = (
-        If((gre.header.payload_length > 0) & (gre.to_active))
+
+    gre.prep = (
+        If((gre.header.payload_length != 0) & (gre.to_active))
         >> Assign(gre.temp.offset, gre.perm.passive_offset)
         + Assign(
             gre.perm.passive_offset, gre.perm.passive_offset + gre.header.payload_length
         )
     ) + (
-        If((gre.header.payload_length > 0) & (gre.to_passive))
+        If((gre.header.payload_length != 0) & (gre.to_passive))
         >> Assign(gre.temp.offset, gre.perm.active_offset)
         + Assign(
             gre.perm.active_offset, gre.perm.active_offset + gre.header.payload_length
@@ -62,15 +64,11 @@ def gre_parser(ip):
     gre.seq = Sequence(meta=gre.temp.offset, data=gre.payload, data_len=gre.payload_len)
 
     dump = PSMState(start=True)
-
     nothing = PSMState(accept=True)
-
     gre.psm = PSM(dump, nothing)
-
-    gre.psm.tunneling = (dump >> dump) + Predicate(gre.header.payload_length > 0)
+    gre.psm.tunneling = (dump >> dump) + Predicate(gre.header.payload_length != 0)
     gre.psm.only_ack = (dump >> dump) + Predicate(gre.header.payload_length == 0)
 
     gre.event.asm = If(gre.psm.tunneling) >> Assemble()
 
     return gre
-

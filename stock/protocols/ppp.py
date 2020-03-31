@@ -3,65 +3,65 @@ from weaver.lang import *
 
 
 class PPP_short_header(layout):
-    short_protocol = Bit(1 * 8)
+    short_protocol = Bit(1 << 3)
 
 
 class PPP_header(layout):
     address = Bit(8)
     control = Bit(8)
-    protocol = UInt(2 * 8)
+    protocol = UInt(2 << 3)
 
 
 class PPP_LCP_header(layout):
     LCP_code = Bit(8)
     LCP_ID = Bit(8)
-    LCP_length = UInt(2 * 8)
+    LCP_length = UInt(2 << 3)
 
 
 class PPP_IPCP_header(layout):
     PPP_IPCP_code = Bit(8)
     PPP_IPCP_ID = Bit(8)
-    PPP_IPCP_length = UInt(2 * 8)
+    PPP_IPCP_length = UInt(2 << 3)
     PPP_IPCP_data = Bit(PPP_IPCP_length - 4)
 
 
 class PPP_CHAP_header(layout):
     CHAP_code = Bit(8)
     CHAP_ID = Bit(8)
-    CHAP_length = UInt(2 * 8)
+    CHAP_length = UInt(2 << 3)
     CHAP_data = Bit(CHAP_length - 4)
 
 
 class PPP_CCP_header(layout):
     CCP_code = Bit(8)
     CCP_ID = Bit(8)
-    CCP_length = UInt(2 * 8)
+    CCP_length = UInt(2 << 3)
     CCP_data = Bit(CCP_length - 4)
 
 
 class PPP_IPV6CP_header(layout):
     IPV6CP_code = Bit(8)
     IPV6CP_ID = Bit(8)
-    IPV6CP_length = UInt(2 * 8)
+    IPV6CP_length = UInt(2 << 3)
     IPV6CP_data = Bit(IPV6CP_length - 4)
 
 
 class PPP_LCP_ACCM_option(layout):
     ACCM_type = Bit(8, const=2)
     ACCM_length = Bit(8)
-    ACCM_value = Bit((ACCM_length - 2) * 8)
+    ACCM_value = Bit((ACCM_length - 2) << 3)
 
 
 class PPP_LCP_AP_option(layout):
     AP_type = Bit(8, const=3)
     AP_length = Bit(8)
-    AP_value = Bit((AP_length - 2) * 8)
+    AP_value = Bit((AP_length - 2) << 3)
 
 
 class PPP_LCP_MN_option(layout):
     MN_type = Bit(8, const=5)
     MN_length = Bit(8)
-    MN_value = Bit((MN_length - 2) * 8)
+    MN_value = Bit((MN_length - 2) << 3)
 
 
 class PPP_LCP_PFC_option(layout):
@@ -77,7 +77,7 @@ class PPP_LCP_ACFC_option(layout):
 class PPP_LCP_MRU_option(layout):
     MRU_type = Bit(8, const=1)
     MRU_length = Bit(8)
-    MRU_value = Bit((MRU_length - 2) * 8)
+    MRU_value = Bit((MRU_length - 2) << 3)
 
 
 class PPP_temp_data(layout):
@@ -86,41 +86,38 @@ class PPP_temp_data(layout):
 
 def ppp_parser(ip, gre):
     PPP = ConnectionOriented()
-    PPP.header = (
-        If(gre.perm.short_PPP == 0)
-        >> PPP_header
-        + (If(PPP.header.protocol == 0xC223) >> PPP_CHAP_header)
-        + (If(PPP.header.protocol == 0x80FD) >> PPP_CCP_header)
-        + (If(PPP.header.protocol == 0x8021) >> PPP_IPCP_header)
-        + (If(PPP.header.protocol == 0x8057) >> PPP_IPV6CP_header)
-        + (
-            If(PPP.header.protocol == 0xC021)
-            >> PPP_LCP_header
-            + AnyUntil(
-                [
-                    PPP_LCP_ACCM_option,
-                    PPP_LCP_AP_option,
-                    PPP_LCP_MN_option,
-                    PPP_LCP_PFC_option,
-                    PPP_LCP_ACFC_option,
-                    PPP_LCP_MRU_option,
-                ],
-                PPP.cursor < PPP.header.LCP_length + 4,
-            )
-        )
-    ) + (
-        If(gre.perm.short_PPP)
-        >> PPP_short_header
-        + (If(PPP.header.short_protocol == 0xC223) >> PPP_CHAP_header)
-        + (If(PPP.header.short_protocol == 0x80FD) >> PPP_CCP_header)
-        + (If(PPP.header.short_protocol == 0x8021) >> PPP_IPCP_header)
-        + (If(PPP.header.short_protocol == 0x8057) >> PPP_IPV6CP_header)
-        + (If(PPP.header.short_protocol == 0xC021) >> PPP_LCP_header)
+    ppp_long = PPP_header
+    ppp_long += If(ppp_long.protocol == 0xC223) >> PPP_CHAP_header
+    ppp_long += If(ppp_long.protocol == 0x80FD) >> PPP_CCP_header
+    ppp_long += If(ppp_long.protocol == 0x8021) >> PPP_IPCP_header
+    ppp_long += If(ppp_long.protocol == 0x8057) >> PPP_IPV6CP_header
+    ppp_long += If(ppp_long.protocol == 0xC021) >> PPP_LCP_header + AnyUntil(
+        [
+            PPP_LCP_ACCM_option,
+            PPP_LCP_AP_option,
+            PPP_LCP_MN_option,
+            PPP_LCP_PFC_option,
+            PPP_LCP_ACFC_option,
+            PPP_LCP_MRU_option,
+        ],
+        PPP.cursor < PPP_LCP_header.LCP_length + 4,
     )
+    ppp_short = PPP_short_header
+    ppp_short += If(ppp_short.short_protocol == 0xC223) >> PPP_CHAP_header
+    ppp_short += If(ppp_short.short_protocol == 0x80FD) >> PPP_CCP_header
+    ppp_short += If(ppp_short.short_protocol == 0x8021) >> PPP_IPCP_header
+    ppp_short += If(ppp_short.short_protocol == 0x8057) >> PPP_IPV6CP_header
+    ppp_short += If(ppp_short.short_protocol == 0xC021) >> PPP_LCP_header
+
+    class blank(layout):
+        pass
+
+    PPP.header = blank + (If(gre.perm.short_PPP == 0) >> ppp_long)
+    PPP.header += If(gre.perm.short_PPP == 1) >> ppp_short
 
     PPP.temp = PPP_temp_data
 
-    PPP.preprocess = (
+    PPP.prep = (
         If(gre.perm.short_PPP) >> Assign(PPP.temp.protocol, PPP.header.short_protocol)
     ) + (If(gre.perm.short_PPP == 0) >> Assign(PPP.temp.protocol, PPP.header.protocol))
 
