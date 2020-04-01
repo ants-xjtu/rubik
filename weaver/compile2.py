@@ -79,7 +79,7 @@ def compile7_stack(stack, block_map, inst_decls, entry_id):
     struct7 = "\n".join(
         "typedef struct "
         + indent_join(decl_header_reg(stack.reg_map[reg]) for reg in regs)
-        + f" H{struct};"
+        + f"__attribute__((packed)) H{struct};"
         for struct, regs in stack.struct_map.items()
     )
 
