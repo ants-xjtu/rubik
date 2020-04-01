@@ -78,8 +78,8 @@ class sctp_cookie_ack_hdr(layout):
     cookie_ack_chunk_length = UInt(16)
 
 class sctp_perm(layout):
-    active_seq = Bit(32)
-    passive_seq = Bit(32)
+    active_seq = Bit(32, init=0)
+    passive_seq = Bit(32, init=0)
 
 class sctp_temp(layout):
     seq = Bit(32)
