@@ -111,23 +111,30 @@ def sctp_parser(ip):
 
     sctp.prep = ((If(sctp.header_contain(sctp_data_hdr)) >> (
                     If(sctp.to_active) >> (
-                        Assign(sctp.perm.passive_seq, sctp.header.TSN) + 
-                        Assign(sctp.temp.data_len, sctp.header.length)   
+                        Assign(sctp.perm.passive_seq, sctp.header.TSN + sctp.header.length - 16) + 
+                        Assign(sctp.temp.seq, sctp.header.TSN) + 
+                        Assign(sctp.temp.data_len, sctp.header.length - 16)   
                     ) >> Else() >> (
-                        Assign(sctp.perm.active_seq, sctp.header.TSN) + 
-                        Assign(sctp.temp.data_len, sctp.header.length)
+                        Assign(sctp.perm.active_seq, sctp.header.TSN + sctp.header.length - 16) +
+                        Assign(sctp.temp.seq, sctp.header.TSN) + 
+                        Assign(sctp.temp.data_len, sctp.header.length - 16)
                     )                                         
                 )) + 
-                (If(sctp.header_contain(sctp_init_hdr)) >> (
-                    Assign(sctp.perm.active_seq, sctp.header.initiate_TSN) +
-                    Assign(sctp.temp.data_len, 0)
-                )) + 
-                (If(sctp.header_contain(sctp_init_ack_hdr)) >> (
-                    Assign(sctp.perm.passive_seq, sctp.header.initiate_TSN) + 
-                    Assign(sctp.temp.data_len, 0)
-                )) +
-                (If(sctp.to_active) >> Assign(sctp.temp.seq, sctp.perm.passive_seq)) +
-                (If(sctp.to_passive) >> Assign(sctp.temp.seq, sctp.perm.active_seq))
+                (If(sctp.header_contain(sctp_init_hdr)) >> 
+                    Assign(sctp.perm.active_seq, sctp.header.initiate_TSN)) + 
+                (If(sctp.header_contain(sctp_init_ack_hdr)) >> 
+                    Assign(sctp.perm.passive_seq, sctp.header.init_ack_initiate_TSN)) +
+                (If(sctp.header_contain(sctp_cookie_echo_hdr) | 
+                    sctp.header_contain(sctp_cookie_ack_hdr) | 
+                    sctp.header_contain(sctp_init_hdr) |
+                    sctp.header_contain(sctp_init_ack_hdr) | 
+                    sctp.header_contain(sctp_sack_hdr)) >> (
+                    Assign(sctp.temp.data_len, 0) + (
+                        (If(sctp.to_active) >> Assign(sctp.temp.seq, sctp.perm.passive_seq)) +
+                        (If(sctp.to_passive) >> Assign(sctp.temp.seq, sctp.perm.active_seq))
+                    ) 
+                ))
+                
                 ) 
 
 
