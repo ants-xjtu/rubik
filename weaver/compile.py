@@ -791,7 +791,7 @@ def compile4_payload():
 
 
 def compile4_content(context):
-    return Expr({StackContext.HEADER}, Eval1Abstract(), (context.content_expr6, "$sdu"))
+    return Expr({StackContext.SEQUENCE}, Eval1Abstract(), (context.content_expr6, "$sdu"))
 
 
 def compile4_total():
