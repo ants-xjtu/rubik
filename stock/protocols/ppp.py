@@ -138,7 +138,7 @@ def ppp_parser(ip, gre):
     )
 
     PPP.psm.config = (SESSION >> SESSION) + Predicate(
-        (PPP.temp.protocol != 0x0021) & PPP.header_contain(PPP_LCP_ACFC_option)
+        (PPP.temp.protocol != 0x0021) & (PPP.header_contain(PPP_LCP_ACFC_option) == 0)
     )
 
     PPP.psm.p_sent_AFCF = (SESSION >> passive_sent_ACFC_active_no) + Predicate(
