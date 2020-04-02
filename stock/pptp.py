@@ -26,8 +26,8 @@ stack += (stack.eth >> stack.ip1) + Predicate(1)
 stack += (stack.ip1 >> stack.tcp_ctl) + Predicate(
     (stack.ip1.psm.dump | stack.ip1.psm.last) & (stack.ip1.header.protocol == 6)
 )
-stack += (stack.tcp >> stack.pptp) + Predicate(
-    stack.tcp.psm.buffering & (stack.tcp.sdu.length != 0)
+stack += (stack.tcp_ctl >> stack.pptp) + Predicate(
+    stack.tcp_ctl.psm.buffering & (stack.tcp_ctl.sdu.length != 0)
 )
 stack += (stack.ip1 >> stack.gre) + Predicate(
     (stack.ip1.psm.last | stack.ip1.psm.dump) & (stack.ip1.header.protocol == 47)
