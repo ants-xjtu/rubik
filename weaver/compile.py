@@ -323,7 +323,7 @@ class CoverSlice:
         self.compile7 = "\n".join(
             [
                 f"{slice_reg.expr6}.cursor = current.cursor;",
-                f"{slice_reg.expr6}.length = {slice_reg.length_expr4.compile6[0]}; "
+                f"{slice_reg.expr6}.length = ({slice_reg.length_expr4.compile6[0]}) >> 3; "
                 f"// {slice_reg.length_expr4.compile6[1]}",
                 f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
                 f"{parsed_reg.expr6} = 1;",
@@ -618,6 +618,7 @@ def compile5_if(if_stat, context):
 
 
 def compile5_assemble(context, set_opt=True):
+    buffer_data = int(context.buffer_data if set_opt else False)
     return [
         UpdateReg(
             StackContext.SEQUENCE,
@@ -625,7 +626,7 @@ def compile5_assemble(context, set_opt=True):
             True,
             code_comment(
                 f"{context.content_expr6} = "
-                f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
+                f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6}, {buffer_data});",
                 "assemble",
             ),
             SetOptFlag("assemble") if set_opt else None,

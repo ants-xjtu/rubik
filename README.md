@@ -29,3 +29,10 @@ Non-exhuasted willing list
 * ~~non-sequence instance~~
 * insert-assemble-(no next & callback) optimization pattern
 * foreign UInt may cause bug
+* built-in events:
+    * `psm.fail`
+    * `seq.retrex`
+    * `seq.overlap`
+    * `seq.outofwindow`
+    * `seq.outofbuffer`
+* `stack.foo.layer.context.buffer_data` -> `stack.foo.buffer_data`

@@ -8,21 +8,12 @@ WV_U8 WV_Setup()
 }
 
 typedef struct {
-    WV_U8 _190; // report_status.state
-    WV_ByteSlice _191; // report_status.content
-} H10;
+  WV_U8 _203;  // report_status.state
+  WV_ByteSlice _204;  // report_status.content
+}__attribute__((packed)) H12;
 
-WV_U8 report_status(H10* args, WV_Any user_data)
+WV_U8 report_status(H12 *args, WV_Any user_data)
 {
-    printf("state: %u len(content): %u\n", args->_190, args->_191.length);
+    printf("state: %u len(content): %u\n", args->_203, args->_204.length);
     return 0;
-}
-
-typedef struct {
-  WV_U8 _200;  // count_ip.dummy
-} H11;
-
-WV_U8 count_ip(H11 *args, WV_Any user_data) {
-  printf("count ip\n");
-  return 0;
 }
