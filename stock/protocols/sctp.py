@@ -77,6 +77,28 @@ class sctp_cookie_ack_hdr(layout):
     cookie_ack_chunk_flag = Bit(8)
     cookie_ack_chunk_length = UInt(16)
 
+class sctp_shutdown_hdr(layout):
+    shutdown_chunk_type = Bit(8, const = 7)
+    shutdown_chunk_flag = Bit(8)
+    shutdown_chunk_length = Bit(8)
+    shudown_cumu_TSN_ack = Bit(32)
+
+class sctp_shutdown_ack_hdr(layout):
+    shutdown_ack_chunk_type = Bit(8, const = 8)
+    shutdown_ack_chunk_flag = Bit(8)
+    shutdown_ack_chunk_length = Bit(8)
+
+class sctp_shutdown_complete_hdr(layout):
+    shutdown_complete_chunk_type = Bit(8, const = 14)
+    shutdown_complete_chunk_flag = Bit(8)
+    shutdown_complete_chunk_length = Bit(8)
+
+class sctp_abort_hdr(layout):
+    abort_chunk_type = Bit(8, const = 6)
+    abort_chunk_flag = Bit(8)
+    abort_chunk_length = Bit(8)
+
+
 class sctp_perm(layout):
     active_seq = Bit(32, init=0)
     passive_seq = Bit(32, init=0)
@@ -94,7 +116,11 @@ def sctp_parser(ip):
         sctp_init_ack_hdr,
         sctp_sack_hdr,
         sctp_cookie_echo_hdr,
-        sctp_cookie_ack_hdr      
+        sctp_cookie_ack_hdr,
+        sctp_shutdown_hdr,
+        sctp_shutdown_ack_hdr,
+        sctp_shutdown_complete_hdr,
+        sctp_abort_hdr     
     ], Const(0))
         
 
@@ -107,7 +133,8 @@ def sctp_parser(ip):
     sctp.perm = sctp_perm
 
     CLOSED = PSMState(start=True)
-    INIT_SENT, INIT_ACK_SENT, COOKIE_ECHO_SENT, ESTABLISHED, MORE_FRAG = make_psm_state(5)
+    INIT_SENT, INIT_ACK_SENT, COOKIE_ECHO_SENT, ESTABLISHED, MORE_FRAG, SHUTDOWN_SENT, SHUTDOWN_ACK_SENT = make_psm_state(7)
+    TERMINATE = PSMState(accept=True)
 
     sctp.prep = ((If(sctp.header_contain(sctp_data_hdr)) >> (
                     If(sctp.to_active) >> (
@@ -184,6 +211,20 @@ def sctp_parser(ip):
     sctp.psm.unordered = (ESTABLISHED >> ESTABLISHED) + \
         Pred(sctp.header_contain(sctp_data_hdr) & (sctp.header.U == 1))
 
+    sctp.psm.abort1 = (ESTABLISHED >> TERMINATE) + \
+        Pred(sctp.header_contain(sctp_abort_hdr))
+
+    sctp.psm.abort2 = (CLOSED >> TERMINATE) + \
+        Pred(sctp.header_contain(sctp_abort_hdr))
+
+    sctp.psm.wv1 = (ESTABLISHED >> SHUTDOWN_SENT) + \
+        Pred(sctp.header_contain(sctp_shutdown_hdr))
+
+    sctp.psm.wv2 = (SHUTDOWN_SENT >> SHUTDOWN_ACK_SENT) + \
+        Pred(sctp.header_contain(sctp_shutdown_ack_hdr))
+        
+    sctp.psm.wv3 = (SHUTDOWN_ACK_SENT >> TERMINATE) + \
+        Pred(sctp.header_contain(sctp_shutdown_complete_hdr))
 
     sctp.event.asm = If(sctp.psm.unordered | sctp.psm.single_frag | sctp.psm.data_end) >> Assemble()
     return sctp
