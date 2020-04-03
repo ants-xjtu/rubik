@@ -175,7 +175,7 @@ def sctp_parser(ip):
 
 
     sctp.psm = PSM(
-        CLOSED, INIT_SENT, INIT_ACK_SENT, COOKIE_ECHO_SENT, ESTABLISHED, MORE_FRAG
+        CLOSED, INIT_SENT, INIT_ACK_SENT, COOKIE_ECHO_SENT, ESTABLISHED, MORE_FRAG, SHUTDOWN_SENT, SHUTDOWN_ACK_SENT, TERMINATE
     )
 
     sctp.psm.hs1 = (CLOSED >> INIT_SENT) + Pred(sctp.header_contain(sctp_init_hdr))
