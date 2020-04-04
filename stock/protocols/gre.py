@@ -61,7 +61,7 @@ def gre_parser(ip):
         )
     )
 
-    gre.seq = Sequence(meta=gre.temp.offset, data=gre.payload, data_len=gre.payload_len)
+    # gre.seq = Sequence(meta=gre.temp.offset, data=gre.payload, data_len=gre.payload_len)
 
     dump = PSMState(start=True)
     nothing = PSMState(accept=True)
@@ -69,6 +69,6 @@ def gre_parser(ip):
     gre.psm.tunneling = (dump >> dump) + Predicate(gre.header.payload_length != 0)
     gre.psm.only_ack = (dump >> dump) + Predicate(gre.header.payload_length == 0)
 
-    gre.event.asm = If(gre.psm.tunneling) >> Assemble()
+    # gre.event.asm = If(gre.psm.tunneling) >> Assemble()
 
     return gre
