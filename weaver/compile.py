@@ -646,7 +646,7 @@ def compile5_call(call, context):
             False,
             f"{call.layout.debug_name}("
             f"{compile6_struct_expr(context.stack.call_struct[call])}, "
-            f"{context.inst_expr6}->user_data);",
+            f"&{context.inst_expr6}->user_data);",
         )
     ]
 
@@ -1027,6 +1027,7 @@ class CreateInst:
                 [
                     context.insert_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+                    f"{context.inst_expr6}->user_data = NULL;",
                     f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});"
                     if context.seq is not None
                     else "// no seq",
@@ -1120,6 +1121,7 @@ class CreateBiInst:
                     context.insert_stat7,
                     context.insert_rev_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+                    f"{context.inst_expr6}->user_data = {context.inst_expr6}->user_data_rev = NULL;",
                     f"{context.inst_expr6}->flag = 0;",
                     f"{context.inst_expr6}->flag_rev = 1;",
                     *(
