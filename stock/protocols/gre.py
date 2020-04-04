@@ -27,8 +27,8 @@ class GRE_ack_number(layout):
 
 class GRE_perm(layout):
     short_PPP = Bit(8, init=0)
-    active_offset = Bit(64, init=0)
-    passive_offset = Bit(64, init=0)
+    active_offset = Bit(32, init=0)
+    passive_offset = Bit(32, init=0)
 
 
 class GRE_temp(layout):
