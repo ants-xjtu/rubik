@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <sys/queue.h>
+#include <sys/time.h>
 #include <getopt.h>
 #include <signal.h>
 #include <inttypes.h>
@@ -52,17 +53,17 @@
 
 #define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
 
-#define NB_MBUFS 64*1024 /* use 64k mbufs */
+#define NB_MBUFS 128*1024 /* use 64k mbufs */
 #define MBUF_CACHE_SIZE 256
 #define PKT_BURST 32
-#define RX_RING_SIZE 1024
-#define TX_RING_SIZE 1024
+#define RX_RING_SIZE 128
+#define TX_RING_SIZE 512
 
 #define PARAM_PROC_ID "proc-id"
 #define PARAM_NUM_PROCS "num-procs"
 
-// #define RSS_DEBUG 1
-#define RUBIK 1
+// #define EVAL_PERF
+// #define FWD
 
 /* for each lcore, record the elements of the ports array to use */
 struct lcore_ports{
@@ -213,19 +214,10 @@ set_xl710_nic(uint16_t port)
 
   // see drivers/net/i40e/i40e_ethdev.c, I40E_FLOW_TYPES, for all flow types
   // supported by i40 driver (XL710)
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV4);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV4);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_FRAG_IPV6);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_OTHER);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_EX);
   set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_TCP);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_TCP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_TCP_EX);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
-  // set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV6_UDP);
-  //set_flow_type_mask(&info, RTE_ETH_FLOW_IPV6_UDP_EX);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_UDP);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_SCTP);
+  set_flow_type_mask(&info, RTE_ETH_FLOW_NONFRAG_IPV4_OTHER);
 
   ret = rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
   if (ret < 0) {
@@ -259,16 +251,20 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
       .rxmode = {
         .mq_mode  = ETH_MQ_RX_RSS,
         .split_hdr_size = 0,
-        .offloads = (DEV_RX_OFFLOAD_CHECKSUM |
-               DEV_RX_OFFLOAD_CRC_STRIP),
+        .offloads = (DEV_RX_OFFLOAD_CHECKSUM),
+        //  |
+              //  DEV_RX_OFFLOAD_CRC_STRIP),
       },
       .rx_adv_conf = {
         .rss_conf = {
           .rss_key = seed,
           .rss_key_len = sizeof(seed),
-          // .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP,
-          .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP,
-          // .rss_hf = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
+#ifdef XL710
+          .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP |
+                    ETH_RSS_NONFRAG_IPV4_SCTP | ETH_RSS_NONFRAG_IPV4_OTHER,
+#else
+          .rss_hf = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
+#endif
         },
       },
       .txmode = {
@@ -315,9 +311,11 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
   if (retval < 0)
     return retval;
 
+#ifdef XL710
   retval = set_xl710_nic(port);
   if (retval < 0)
     return retval;
+#endif
 
   retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
   if (retval < 0)
@@ -359,13 +357,13 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
 static void
 assign_ports_to_cores(void)
 {
-
   const unsigned lcores = rte_eal_get_configuration()->lcore_count;
+  unsigned i;
+ #ifdef FWD
   const unsigned port_pairs = num_ports / 2;
   const unsigned pairs_per_lcore = port_pairs / lcores;
   unsigned extra_pairs = port_pairs % lcores;
   unsigned ports_assigned = 0;
-  unsigned i;
 
   RTE_LCORE_FOREACH(i) {
     lcore_ports[i].start_port = ports_assigned;
@@ -376,7 +374,14 @@ assign_ports_to_cores(void)
     }
     ports_assigned += lcore_ports[i].num_ports;
   }
+#else
+  RTE_LCORE_FOREACH(i) {
+    lcore_ports[i].start_port = 0;
+    lcore_ports[i].num_ports = num_ports;
+  }
+#endif
 }
+
 
 /* DPDKUser */
 typedef struct {
@@ -385,6 +390,36 @@ typedef struct {
 } DPDKUser;
 
 DPDKUser* dpdk_user;
+
+unsigned long pkt_id = 0;
+unsigned long long pkt_vol = 0;
+struct timeval now;
+struct timeval milestone;
+#define PERF_AVG_NUM 5
+double throughputs[PERF_AVG_NUM];
+double peak_throught = -1;
+
+static void
+print_avg_throughput()
+{
+	double total = 0.0;
+	int i;
+	int r = 0;
+	for (i=0; i<PERF_AVG_NUM; i++) {
+		if (throughputs[i] <= 0) {
+      peak_throught = -1;
+      continue;
+    }
+		r++;
+		total += throughputs[i];
+    if (throughputs[i] > peak_throught) {
+      peak_throught = throughputs[i];
+    }
+	}
+	const unsigned id = rte_lcore_id();
+	printf("Lcore %d, Throughput: %lf Gbps (last %d avg.) Peak: %lf\n", 
+    id, (double)total/r, r, peak_throught);
+}
 
 /* Main function used by the processing threads.
  * Prints out some configuration details for the thread and then begins
@@ -405,6 +440,9 @@ lcore_main(__attribute__((unused)) void *arg1)
     printf("Lcore %u has nothing to do\n", id);
     return 0;
   }
+  
+  memset(throughputs, 0, sizeof(double)*PERF_AVG_NUM);
+  int perf_index = 0;
 
   /* build up message in msgbuf before printing to decrease likelihood
    * of multi-core message interleaving.
@@ -427,47 +465,48 @@ lcore_main(__attribute__((unused)) void *arg1)
 
     for (p = start_port; p < end_port; p++) {
       const uint8_t src = ports[p];
+#ifdef FWD
       const uint8_t dst = ports[p ^ 1]; /* 0 <-> 1, 2 <-> 3 etc */
+#endif
       const uint16_t rx_c = rte_eth_rx_burst(src, q_id, buf, PKT_BURST);
       if (rx_c == 0)
         continue;
       pstats[src].rx += rx_c;
 
-#ifdef RUBIK
       /* handle each of the recieved packets */
       uint16_t j;
       for (j = 0 ;j < rx_c; j++) {
           struct rte_mbuf* cur_buf = buf[j];
-#ifdef RSS_DEBUG
-          unsigned char* eth_hdr = rte_pktmbuf_mtod(cur_buf, unsigned char*);
-          /* IPv4 only */
-          if (eth_hdr[12] != 0x08 || eth_hdr[13] != 0x00) continue;
-          struct iphdr* ip_hdr = (struct iphdr*)(eth_hdr+14);
-
-          uint16_t sport, dport;
-          memcpy(&sport, eth_hdr+14+4*ip_hdr->ihl, 2);
-          memcpy(&dport, eth_hdr+14+4*ip_hdr->ihl+2, 2);
-
-          struct in_addr addr1, addr2;
-          memcpy(&addr1, &(ip_hdr->saddr), 4);
-          memcpy(&addr2, &(ip_hdr->daddr), 4);
-
-          printf("\n");
-          printf("src ip: %s, ", inet_ntoa(addr1));
-          printf("src port: %hu, ", ntohs(sport));
-          printf("dst ip: %s, ", inet_ntoa(addr2));
-          printf("dst port: %hu, ", ntohs(dport));
-          printf("rss hash = %u", cur_buf->hash.rss);
+#ifdef EVAL_PERF
+          pkt_vol += rte_pktmbuf_pkt_len(cur_buf);
+      	  if (pkt_id++ > 5000000) {
+      	    gettimeofday(&now, NULL);
+  					time_t s = now.tv_sec - milestone.tv_sec;
+  					suseconds_t u = s * 1000000 + now.tv_usec - milestone.tv_usec;
+  					double throughput = (double)8000000*pkt_vol/(u*1000*1000*1000);
+  					// printf("time: %luus, pkt: %lu, vol: %lld, ", u, pkt_id, pkt_vol);
+  					throughputs[perf_index] = throughput;
+  					print_avg_throughput();
+  					// printf("Lcore %d, Throughput: %lfGbps\n", id, throughput);
+  					milestone.tv_sec = now.tv_sec;
+  					milestone.tv_usec = now.tv_usec;
+  					pkt_id = 0;
+  					pkt_vol = 0;
+  					perf_index = (perf_index+1) % PERF_AVG_NUM;
+  				}
 #endif
           unsigned char* pkt_buf = rte_pktmbuf_mtod(cur_buf, unsigned char*);
           unsigned pkt_len = rte_pktmbuf_pkt_len(cur_buf);
+
           WV_Runtime *runtime = dpdk_user->runtime;
           WV_ByteSlice packet = { .cursor = pkt_buf, .length = pkt_len };
           WV_U8 status = WV_ProcessPacket(packet, runtime);
+#ifndef EVAL_PERF
           WV_ProfileRecord(WV_GetProfile(runtime), pkt_len, status);
-      }
 #endif
+      }
 
+#ifdef FWD
       const uint16_t tx_c = rte_eth_tx_burst(dst, q_id, buf, rx_c);
       pstats[dst].tx += tx_c;
       if (tx_c != rx_c) {
@@ -475,6 +514,11 @@ lcore_main(__attribute__((unused)) void *arg1)
         for (i = tx_c; i < rx_c; i++)
           rte_pktmbuf_free(buf[i]);
       }
+#else
+      for (j = 0 ;j < rx_c; j++) {
+        rte_pktmbuf_free(buf[j]);
+      }
+#endif
     }
   }
 }
@@ -596,9 +640,25 @@ main(int argc, char **argv)
       return 1;
   }
 
+// #ifdef STRING_FINDER
+//   init_pcre();
+// #endif
+
   DPDKUser user = { .runtime = runtime, .port = 0 };
   dpdk_user = &user;
+  
+#ifdef EVAL_PERF
+  gettimeofday(&milestone, NULL);
+#else
   WV_ProfileStart(WV_GetProfile(runtime));
+#endif
+
+#ifdef FWD
+  printf("Running with Forwarding\n");
+#else
+  printf("Running at Passive Mode\n");
+#endif
+
   
   rte_eal_mp_remote_launch(lcore_main, NULL, CALL_MASTER);
 
