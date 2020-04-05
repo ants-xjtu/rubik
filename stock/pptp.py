@@ -26,14 +26,14 @@ stack += (stack.eth >> stack.ip1) + Predicate(1)
 stack += (stack.ip1 >> stack.tcp_ctl) + Predicate(
     (stack.ip1.psm.dump | stack.ip1.psm.last) & (stack.ip1.header.protocol == 6)
 )
-stack += (stack.tcp >> stack.pptp) + Predicate(
-    stack.tcp.psm.buffering & (stack.tcp.sdu.length != 0)
+stack += (stack.tcp_ctl >> stack.pptp) + Predicate(
+    stack.tcp_ctl.psm.buffering & (stack.tcp_ctl.sdu.length != 0)
 )
 stack += (stack.ip1 >> stack.gre) + Predicate(
     (stack.ip1.psm.last | stack.ip1.psm.dump) & (stack.ip1.header.protocol == 47)
 )
 stack += (stack.gre >> stack.ppp) + Predicate(
-    (stack.gre.header.protocol == 0x880B) & stack.gre.psm.tunneling
+    (stack.gre.header.protocol == 0x0B88) & stack.gre.psm.tunneling
 )
 stack += (stack.ppp >> stack.ip2) + Predicate(
     (stack.ppp.temp.protocol == 0x0021) & stack.ppp.psm.tunneling

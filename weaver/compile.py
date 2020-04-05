@@ -323,7 +323,9 @@ class CoverSlice:
         self.compile7 = "\n".join(
             [
                 f"{slice_reg.expr6}.cursor = current.cursor;",
+
                 f"{slice_reg.expr6}.length = ({slice_reg.length_expr4.compile6[0]}) >> 3; "
+
                 f"// {slice_reg.length_expr4.compile6[1]}",
                 f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
                 f"{parsed_reg.expr6} = 1;",
@@ -444,7 +446,7 @@ class TaggedLoop:
                 "do "
                 + indent_join(
                     [
-                        f"{tag_reg.expr6} = WV_NToH32(current.cursor[0] << 8 + current.cursor[1]);",
+                        f"{tag_reg.expr6} = WV_NToH16((((WV_U16)current.cursor[0]) << 8) + ((WV_U16)current.cursor[1]));",
                         "current = WV_SliceAfter(current, 2);",
                         f"switch ({tag_reg.expr6}) "
                         + indent_join(
@@ -792,7 +794,7 @@ def compile4_payload():
 
 
 def compile4_content(context):
-    return Expr({StackContext.HEADER}, Eval1Abstract(), (context.content_expr6, "$sdu"))
+    return Expr({StackContext.SEQUENCE}, Eval1Abstract(), (context.content_expr6, "$sdu"))
 
 
 def compile4_total():

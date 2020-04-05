@@ -27,8 +27,8 @@ class GRE_ack_number(layout):
 
 class GRE_perm(layout):
     short_PPP = Bit(8, init=0)
-    active_offset = Bit(64, init=0)
-    passive_offset = Bit(64, init=0)
+    active_offset = Bit(32, init=0)
+    passive_offset = Bit(32, init=0)
 
 
 class GRE_temp(layout):
@@ -61,7 +61,7 @@ def gre_parser(ip):
         )
     )
 
-    gre.seq = Sequence(meta=gre.temp.offset, data=gre.payload, data_len=gre.payload_len)
+    # gre.seq = Sequence(meta=gre.temp.offset, data=gre.payload, data_len=gre.payload_len)
 
     dump = PSMState(start=True)
     nothing = PSMState(accept=True)
@@ -69,6 +69,6 @@ def gre_parser(ip):
     gre.psm.tunneling = (dump >> dump) + Predicate(gre.header.payload_length != 0)
     gre.psm.only_ack = (dump >> dump) + Predicate(gre.header.payload_length == 0)
 
-    gre.event.asm = If(gre.psm.tunneling) >> Assemble()
+    # gre.event.asm = If(gre.psm.tunneling) >> Assemble()
 
     return gre
