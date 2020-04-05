@@ -145,15 +145,17 @@ static inline WV_U8 WV_Insert(
         }
         if (seq->offset < left) {
             // left expected data out of window
-            for (WV_U8 i = 0; i < seq->used_count; i += 1) {
-                assert(seq->nodes[i].left >= left);
-                assert(seq->nodes[i].right - seq->offset <= WV_CONFIG_SeqBufferSize);
-                memmove(
-                    &seq->buffer[seq->nodes[i].left - left],
-                    &seq->buffer[seq->nodes[i].left - seq->offset],
-                    seq->nodes[i].right - seq->nodes[i].left);
+            if (use_data) {
+                for (WV_U8 i = 0; i < seq->used_count; i += 1) {
+                    assert(seq->nodes[i].left >= left);
+                    assert(seq->nodes[i].right - seq->offset <= WV_CONFIG_SeqBufferSize);
+                    memmove(
+                        &seq->buffer[seq->nodes[i].left - left],
+                        &seq->buffer[seq->nodes[i].left - seq->offset],
+                        seq->nodes[i].right - seq->nodes[i].left);
+                }
+                // printf("%u %u\n", seq->offset, left);
             }
-            // printf("%u %u\n", seq->offset, left);
             seq->offset = left;
         }
 
@@ -288,7 +290,7 @@ static inline WV_U8 WV_SeqReady(WV_Seq* seq)
     }
 }
 
-static inline WV_ByteSlice WV_SeqAssemble(WV_Seq* seq, WV_Byte** need_free)
+static inline WV_ByteSlice WV_SeqAssemble(WV_Seq* seq, WV_Byte** need_free, WV_U8 use_data)
 {
     // printf("%u %u\n", seq->used_count, seq->offset);
     if (seq->used_count == 0 || seq->nodes[0].left != seq->offset) {
@@ -303,14 +305,19 @@ static inline WV_ByteSlice WV_SeqAssemble(WV_Seq* seq, WV_Byte** need_free)
         return (WV_ByteSlice){ .cursor = seq->buffer, .length = ready_length };
     }
 
-    WV_Byte* ready_buffer = WV_Malloc(sizeof(WV_Byte) * ready_length);
-    // printf("memcpy\n");
-    WV_Memcpy(ready_buffer, &seq->buffer[seq->nodes[0].left - seq->offset],
-        ready_length);
     seq->offset = seq->nodes[0].right;
     _RemoveNode(seq, 0);
-    *need_free = ready_buffer;
-    return (WV_ByteSlice){ .cursor = ready_buffer, .length = ready_length };
+    if (use_data) {
+        WV_Byte* ready_buffer = WV_Malloc(sizeof(WV_Byte) * ready_length);
+        // printf("memcpy\n");
+        WV_Memcpy(ready_buffer, &seq->buffer[seq->nodes[0].left - seq->offset],
+            ready_length);
+        *need_free = ready_buffer;
+        return (WV_ByteSlice){ .cursor = ready_buffer, .length = ready_length };
+    } else {
+        *need_free = NULL;
+        return WV_EMPTY;
+    }
 }
 
 #endif

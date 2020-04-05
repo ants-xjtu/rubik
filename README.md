@@ -14,7 +14,8 @@ Step 2, compile the blackbox along with custom code
 # auto-generated blank template
 make A=weaver_whitebox.template.c
 # snort application
-make A=app/snort.c
+make -C app/libac
+make A="app/snort.c app/libac/libacism.a"
 # DPDK target
 make A=... T=dpdk
 ```
@@ -29,3 +30,10 @@ Non-exhuasted willing list
 * ~~non-sequence instance~~
 * insert-assemble-(no next & callback) optimization pattern
 * foreign UInt may cause bug
+* built-in events:
+    * `psm.fail`
+    * `seq.retrex`
+    * `seq.overlap`
+    * `seq.outofwindow`
+    * `seq.outofbuffer`
+* `stack.foo.layer.context.buffer_data` -> `stack.foo.buffer_data`

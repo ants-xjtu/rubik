@@ -84,7 +84,7 @@ def compile7_stack(stack, block_map, inst_decls, entry_id):
     )
 
     extern_call7 = "\n".join(
-        f"WV_U8 {call.layout.debug_name}(H{struct_id} *, WV_Any);"
+        f"WV_U8 {call.layout.debug_name}(H{struct_id} *, WV_Any *);"
         for call, struct_id in stack.call_struct.items()
     )
 
@@ -224,8 +224,8 @@ def compile7w_stack(stack):
         + indent_join(
             decl_header_reg(stack.reg_map[reg]) for reg in stack.struct_map[struct_id]
         )
-        + f" H{struct_id};\n"
-        + f"WV_U8 {call.layout.debug_name}(H{struct_id} *args, WV_Any user_data) "
+        + f"__attribute__((packed)) H{struct_id};\n"
+        + f"WV_U8 {call.layout.debug_name}(H{struct_id} *args, WV_Any *user_data) "
         + make_block("return 0;")
         for call, struct_id in stack.call_struct.items()
     )

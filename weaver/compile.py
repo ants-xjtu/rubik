@@ -323,7 +323,9 @@ class CoverSlice:
         self.compile7 = "\n".join(
             [
                 f"{slice_reg.expr6}.cursor = current.cursor;",
-                f"{slice_reg.expr6}.length = ({slice_reg.length_expr4.compile6[0]})/8; "
+
+                f"{slice_reg.expr6}.length = ({slice_reg.length_expr4.compile6[0]}) >> 3; "
+
                 f"// {slice_reg.length_expr4.compile6[1]}",
                 f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
                 f"{parsed_reg.expr6} = 1;",
@@ -618,6 +620,7 @@ def compile5_if(if_stat, context):
 
 
 def compile5_assemble(context, set_opt=True):
+    buffer_data = int(context.buffer_data if set_opt else False)
     return [
         UpdateReg(
             StackContext.SEQUENCE,
@@ -625,7 +628,7 @@ def compile5_assemble(context, set_opt=True):
             True,
             code_comment(
                 f"{context.content_expr6} = "
-                f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6});",
+                f"WV_SeqAssemble(&{context.prefetch_expr6}->seq, &{context.need_free_expr6}, {buffer_data});",
                 "assemble",
             ),
             SetOptFlag("assemble") if set_opt else None,
@@ -645,7 +648,7 @@ def compile5_call(call, context):
             False,
             f"{call.layout.debug_name}("
             f"{compile6_struct_expr(context.stack.call_struct[call])}, "
-            f"{context.inst_expr6}->user_data);",
+            f"&{context.inst_expr6}->user_data);",
         )
     ]
 
@@ -1026,6 +1029,7 @@ class CreateInst:
                 [
                     context.insert_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+                    f"{context.inst_expr6}->user_data = NULL;",
                     f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});"
                     if context.seq is not None
                     else "// no seq",
@@ -1119,6 +1123,7 @@ class CreateBiInst:
                     context.insert_stat7,
                     context.insert_rev_stat7,
                     f"{context.prefetch_expr6} = (WV_Any)({context.inst_expr6} = {context.prealloc_expr6});",
+                    f"{context.inst_expr6}->user_data = {context.inst_expr6}->user_data_rev = NULL;",
                     f"{context.inst_expr6}->flag = 0;",
                     f"{context.inst_expr6}->flag_rev = 1;",
                     *(
@@ -1385,8 +1390,10 @@ def compile5a_layer(layer):
             False,
             f"current = {layer.context.content_expr6};",
         )
-    ] + compile5_next_list(layer.next_list, layer.context)
+    ]
+    instr_list += compile5_next_list(layer.next_list, layer.context, False)
     instr_list += compile5_finalize(layer, layer.context)
+    instr_list += compile5_next_list(layer.next_list, layer.context, True)
     return Block.from_codes(instr_list)
 
 
@@ -1411,9 +1418,11 @@ def compile5_finalize(layer, context):
         return []
 
 
-def compile5_next_list(next_list, context):
+def compile5_next_list(next_list, context, recursive):
     stats = []
     for pred, dst_layer in next_list:
+        if recursive != (dst_layer.context.layer_id == context.layer_id):
+            continue
         jump = UpdateReg(
             StackContext.RUNTIME,
             abstract_expr,
@@ -1427,6 +1436,8 @@ def compile5_next_list(next_list, context):
                         "B%%BLOCK_ID%%_R:",
                         "return_target = b%%BLOCK_ID%%_t;",
                     ]
+                    if not recursive
+                    else ["// recursive", f"goto L{dst_layer.context.layer_id};"]
                 ),
                 f"jump to next layer #{dst_layer.context.layer_id}",
             ),
@@ -1434,6 +1445,7 @@ def compile5_next_list(next_list, context):
         # print('before', stats)
         stats = [Branch(pred.compile4(context), [jump], stats)]
         # print(stats, stats[0].no_list)
+
     return stats
 
 

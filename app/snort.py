@@ -13,7 +13,7 @@ stack.tcp.event.report = If(1) >> (
     + Call(report_status)
 )
 
-class count_ip(layout):
-    dummy = Bit(8)
+# class count_ip(layout):
+#     dummy = Bit(8)
 
-stack.ip.event.report = If(1) >> Call(count_ip)
+# stack.ip.event.report = If(1) >> Call(count_ip)
