@@ -1388,8 +1388,10 @@ def compile5a_layer(layer):
             False,
             f"current = {layer.context.content_expr6};",
         )
-    ] + compile5_next_list(layer.next_list, layer.context)
+    ]
+    instr_list += compile5_next_list(layer.next_list, layer.context, False)
     instr_list += compile5_finalize(layer, layer.context)
+    instr_list += compile5_next_list(layer.next_list, layer.context, True)
     return Block.from_codes(instr_list)
 
 
@@ -1414,9 +1416,11 @@ def compile5_finalize(layer, context):
         return []
 
 
-def compile5_next_list(next_list, context):
+def compile5_next_list(next_list, context, recursive):
     stats = []
     for pred, dst_layer in next_list:
+        if recursive != (dst_layer.context.layer_id == context.layer_id):
+            continue
         jump = UpdateReg(
             StackContext.RUNTIME,
             abstract_expr,
@@ -1430,6 +1434,8 @@ def compile5_next_list(next_list, context):
                         "B%%BLOCK_ID%%_R:",
                         "return_target = b%%BLOCK_ID%%_t;",
                     ]
+                    if not recursive
+                    else ["// recursive", f"goto L{dst_layer.context.layer_id};"]
                 ),
                 f"jump to next layer #{dst_layer.context.layer_id}",
             ),
@@ -1437,6 +1443,7 @@ def compile5_next_list(next_list, context):
         # print('before', stats)
         stats = [Branch(pred.compile4(context), [jump], stats)]
         # print(stats, stats[0].no_list)
+
     return stats
 
 
