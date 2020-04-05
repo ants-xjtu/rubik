@@ -1,2 +1,2 @@
-alert tcp $HOME_NET 1234 -> $EXTERNAL_NET any ( msg:"match text #1"; content:"Date:" )
-alert tcp $HOME_NET 1234 -> $EXTERNAL_NET any ( msg:"match text #2"; content:"href" )
+alert tcp $EXTERNAL_NET 3372 -> $EXTERNAL_NET any ( msg:"match text #1"; content:"Date:" )
+alert tcp $EXTERNAL_NET 3372 -> $EXTERNAL_NET any ( msg:"match text #2"; content:"href" )
