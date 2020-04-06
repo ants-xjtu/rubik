@@ -367,13 +367,13 @@ quic_frame_protocol.selector = (
         stack.ip.header.saddr,
         stack.udp.header.src_port,
         quic_frame_protocol.header.stream_id,
-        # quic_frame_protocol.header.stream_id_tail,
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
     ],
     [
         stack.ip.header.daddr,
         stack.udp.header.dst_port,
         quic_frame_protocol.header.stream_id,
-        # quic_frame_protocol.header.stream_id_tail,
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
     ],
 )
 

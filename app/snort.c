@@ -34,6 +34,7 @@ WV_U8 WV_Setup()
     }
     messages[i] = message;    
     WV_ByteSlice content = read_length_value(rules_data);
+    // printf("content: %*s\n", content.length, content.cursor);
     contents[i].len = content.length;
     contents[i].ptr = content.cursor;
   }
@@ -60,6 +61,7 @@ WV_U8 report_status(H12 *args, WV_Any *user_data_)
 {
   WV_U8 state = args->_203;
   WV_ByteSlice sdu = args->_204;
+  printf("state: %u len(sdu): %u\n", state, sdu.length);
 
   if (state != 3) {
     return 0;

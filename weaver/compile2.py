@@ -43,13 +43,18 @@ def compile7_block(block, is_entry, layer_id):
 def decl_reg(reg, prefix="_"):
     if reg.byte_length is not None:
         type_decl = f"WV_U{reg.byte_length * 8}"
+        post = ""
     else:
         type_decl = "WV_ByteSlice"
-    return f"{type_decl} {prefix}{reg.reg_id};  // {reg.debug_name}"
+        post = " = WV_EMPTY"
+    return f"{type_decl} {prefix}{reg.reg_id}{post};  // {reg.debug_name}"
 
 
 def decl_header_reg(reg):
-    if reg.bit_length is None:  # only in event layout
+    if not hasattr(reg, "bit_length"):  # for SliceKeyReg
+        prefix = "WV_Byte"
+        postfix = f"[{reg.index}]"
+    elif reg.bit_length is None:  # only in event layout
         prefix = "WV_ByteSlice"
         postfix = ""
     elif reg.bit_length < 8:
@@ -177,7 +182,9 @@ def compile7_stack(stack, block_map, inst_decls, entry_id):
                     decl_reg(reg, "_")
                     for reg in stack.reg_map.values()
                     # todo
-                    if not hasattr(reg, "layer_id") and not hasattr(reg, "struct_id")
+                    if not hasattr(reg, "layer_id")
+                    and not hasattr(reg, "struct_id")
+                    and not hasattr(reg, "slice_reg6")
                 ],
                 "WV_ByteSlice current = packet, saved;",
                 "WV_I32 return_target = -1;",
