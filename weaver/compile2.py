@@ -294,13 +294,13 @@ def compile7_decl_bi_inst(bi_inst, context):
         "typedef struct "
         + indent_join(
             decl_header_reg(context.stack.reg_map[reg])
-            for reg in bi_inst.key_regs1 + bi_inst.key_regs2
+            for reg in bi_inst.key_regs1 + bi_inst.key_regs2 + bi_inst.dual_regs
         )
         + f" {compile6_key_type(context.layer_id)};\n"
         + "typedef struct "
         + indent_join(
             decl_header_reg(context.stack.reg_map[reg])
-            for reg in bi_inst.key_regs2 + bi_inst.key_regs1
+            for reg in bi_inst.key_regs2 + bi_inst.key_regs1 + bi_inst.dual_regs
         )
         + f" {compile6_rev_key_type(context.layer_id)};\n"
         + "typedef struct "

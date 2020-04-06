@@ -713,6 +713,10 @@ class Eval1Op2:
             return expr1_eval1[:expr2_eval1]
         elif self.name == "slice_get":
             return expr1_eval1[expr2_eval1]
+        elif self.name == "bit_and":
+            return expr1_eval1 & expr2_eval1
+        elif self.name == "right_shift":
+            return expr1_eval1 >> expr2_eval1
         else:
             assert False, "unknown op2"
 
@@ -738,6 +742,10 @@ def compile6h_op2(name, expr1, expr2):
         return f"WV_SliceAfter({expr1}, {expr2})"
     elif name == "slice_get":
         return f"({expr1}).cursor[{expr2}]"
+    elif name == "bit_and":
+        return f"({expr1}) & ({expr2})"
+    elif name == "right_shift":
+        return f"({expr1}) >> ({expr2})"
     else:
         assert False, f"unknown op2 {name}"
 
@@ -1043,10 +1051,19 @@ class CreateInst:
 
 class BiInst:
     def __init__(self, key_regs1, key_regs2, inst_regs, to_active):
-        self.key_regs1 = key_regs1
-        self.key_regs2 = key_regs2
+        self.key_regs1 = []
+        self.key_regs2 = []
+        self.dual_regs = []
+        for r1, r2 in zip(key_regs1, key_regs2):
+            if r1 == r2:
+                self.dual_regs.append(r1)
+            else:
+                assert r1 not in self.key_regs1
+                assert r2 not in self.key_regs2
+                self.key_regs1.append(r1)
+                self.key_regs2.append(r2)
         self.inst_regs = inst_regs
-        self.key_regs = key_regs1 + key_regs2
+        self.key_regs = self.key_regs1 + self.key_regs2 + self.dual_regs
         self.prefetch = PrefetchInst  # same as Inst
         self.create = CreateBiInst
         self.create_light = CreateLightBiInst
