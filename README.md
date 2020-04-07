@@ -15,7 +15,8 @@ Step 2, compile the blackbox along with custom code
 make A=weaver_whitebox.template.c
 # snort application
 make -C app/libac
-make A="app/snort.c app/libac/libacism.a"
+make -C app/http-parser library
+make A="app/snort.c app/libac/libacism.a app/http-parser/libhttp_parser.o"
 # DPDK target
 make A=... T=dpdk
 ```

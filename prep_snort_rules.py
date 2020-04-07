@@ -1,10 +1,11 @@
 from sys import argv
 from re import search
+from libconf import dump
 
 content = bytearray()
 
 with open(argv[1]) as rules_file:
-    rule_count = 0
+    info_list = []
     for rule in rules_file:
         info = {}
         groups = search(
@@ -25,19 +26,35 @@ with open(argv[1]) as rules_file:
         elif groups[3] == "$HTTP_PORTS":
             dstport = 80
         else:
-            dstport = int(groups[3])        
+            dstport = int(groups[3])
+        info["srcport"] = srcport
+        info["dstport"] = dstport
+
         args = groups[4].split(";")
-        # print(rule)
+        expect_uri = False
         for arg in args:
             if ":" in arg:
                 key, value = tuple(arg.split(":", 1))
                 key = key.strip()
-                value = value.strip()
+                value = value.strip().split(",")[0]  # ignore modifiers
                 if key == "msg":
                     info["msg"] = value[1:-1]
                 elif key == "content":
-                    # todo
-                    info["content"] = value[1:-1].encode()
+                    content = ""
+                    for i, part in enumerate(value[1:-1].split("|")):
+                        if i % 2 == 0:
+                            content += part
+                        else:
+                            for code in part.split(" "):
+                                content += chr(int(code, 16))
+                    if expect_uri:
+                        info["uri_content"] = content
+                        expect_uri = False
+                    else:
+                        info["content"] = content
+            else:
+                if arg.strip() == "http_uri":
+                    expect_uri = True
 
         def write_length_value(bs):
             length = len(bs)
@@ -46,11 +63,12 @@ with open(argv[1]) as rules_file:
             content.append(length & 0x00FF)
             content.extend(bs)
 
-        if "content" in info:
-            write_length_value(info["msg"].encode())
-            write_length_value(info["content"])
-            rule_count += 1
+        if "content" not in info:
+            info["content"] = ""
+        if "uri_content" not in info:
+            info["uri_content"] = ""
+        info_list.append(info)
 
-print("#rule:", rule_count)
-with open("snort.bin", "wb") as bin_file:
-    bin_file.write(content)
+print("#rule:", len(info_list))
+with open("snort.cfg", "w") as cfg_file:
+    dump({"rules": tuple(info_list)}, cfg_file)
