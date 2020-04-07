@@ -232,12 +232,12 @@ static inline WV_U8 WV_Insert(
                     // postfix out of window
                 }
             } else if (!seq->pre_done) {
-                // assert(offset == seq->offset);
-                if (offset = seq->offset) {
+                assert(offset == seq->offset);
+                // if (offset = seq->offset) {
                     seq->offset = offset + takeup_length;
-                } else {
-                    // prefix out of window
-                }
+                // } else {
+                //     // prefix out of window
+                // }
             } else {
                 if (seq->used_count == 0 || offset >= seq->nodes[seq->used_count - 1].right) {
                     // printf("set post_start #2\n");
