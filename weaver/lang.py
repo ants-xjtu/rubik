@@ -35,6 +35,7 @@ from weaver.compile import (
     compile5_if,
     compile5_call,
     compile5_assign_quic_uint,
+    compile5_assign_sdu,
 )
 
 
@@ -965,6 +966,17 @@ class AssignQUICUInt(ActionOpMixin):
 
     def compile5(self, context):
         return compile5_assign_quic_uint(self, context)
+
+    def compile2(self, context):
+        pass
+
+
+class AssignSDU(ActionOpMixin):
+    def __init__(self, expr):
+        self.expr = expr
+
+    def compile5(self, context):
+        return compile5_assign_sdu(self.expr, context)
 
     def compile2(self, context):
         pass

@@ -903,6 +903,21 @@ def compile5_assign_quic_uint(assign, context):
     ]
 
 
+def compile5_assign_sdu(expr, context):
+    expr4 = expr.compile4(context)
+    return [
+        UpdateReg(
+            StackContext.SEQUENCE,
+            Expr(expr4.read_regs, Eval1Abstract(), None),
+            False,
+            code_comment(
+                f"{context.content_expr6} = {expr4.compile6[0]};",
+                f"assign sdu <- {expr4.compile6[1]}",
+            ),
+        )
+    ]
+
+
 class Eval1Abstract:
     def eval1(self, context):
         raise NotConstant()
