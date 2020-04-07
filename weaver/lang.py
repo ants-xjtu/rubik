@@ -34,6 +34,7 @@ from weaver.compile import (
     compile5_assemble,
     compile5_if,
     compile5_call,
+    compile5_assign_quic_uint,
 )
 
 
@@ -954,3 +955,16 @@ class BitAndOp(NumberOpMixin, Op2VirtualMixin):
 
     def compile4(self, context):
         return compile4_op2("bit_and", self.expr1, self.expr2, context)
+
+
+class AssignQUICUInt(ActionOpMixin):
+    def __init__(self, var, head, tail):
+        self.var = var
+        self.head = head
+        self.tail = tail
+
+    def compile5(self, context):
+        return compile5_assign_quic_uint(self, context)
+
+    def compile2(self, context):
+        pass

@@ -862,6 +862,47 @@ class Eval3VarEqual:
             pass
 
 
+def compile5_assign_quic_uint(assign, context):
+    reg = context.query(assign.var)
+    reg6 = context.stack.reg_map[reg].expr6
+    head4 = assign.head.compile4(context)
+    tail4 = assign.tail.compile4(context)
+    head6 = head4.compile6[0]
+    tail6 = tail4.compile6[0]
+    return [
+        UpdateReg(
+            reg,
+            Expr({*head4.read_regs, *tail4.read_regs}, Eval1Abstract(), None),
+            False,
+            code_comment(
+                "\n".join(
+                    [
+                        f"{reg6} = {head6} & 0b00111111;",
+                        f"if ({head6} & 0b11000000) {reg6} = ({reg6} << 8) + {tail6}.cursor[0];",
+                        f"if ({head6} & 0b10000000) "
+                        + indent_join(
+                            [
+                                f"{reg6} = ({reg6} << 8) + {tail6}.cursor[1];",
+                                f"{reg6} = ({reg6} << 8) + {tail6}.cursor[2];",
+                                f"if ({head6} & 0b01000000) "
+                                + indent_join(
+                                    [
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[3];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[4];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[5];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[6];",
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                f"{context.stack.reg_map[reg].debug_name} = QUIC_UInt({head4.compile6[1]}, {tail4.compile6[1]})",
+            ),
+        )
+    ]
+
+
 class Eval1Abstract:
     def eval1(self, context):
         raise NotConstant()

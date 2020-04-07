@@ -333,24 +333,34 @@ def assign_variable_length_int(dst, head, tail):
 
 
 quic_frame_protocol.temp = QUICFrameTempData
-quic_frame_protocol.preprocess = (
+quic_frame_protocol.prep = (
     If(quic_frame_protocol.header.frame_type & 0xF0 != 0)
     >> (
         If(quic_frame_protocol.header.frame_type & 0x04 == 0)
         >> Assign(quic_frame_protocol.temp.offset, 0)
         >> Else()
-        >> assign_variable_length_int(
+        # >> assign_variable_length_int(
+        #     quic_frame_protocol.temp.offset,
+        #     quic_frame_protocol.header.frame_offset,
+        #     SliceAfterOp(quic_frame_protocol.header.frame_offset_tail, Const(0)),
+        # )
+        >> AssignQUICUInt(
             quic_frame_protocol.temp.offset,
             quic_frame_protocol.header.frame_offset,
-            SliceAfterOp(quic_frame_protocol.header.frame_offset_tail, Const(0)),
+            quic_frame_protocol.header.frame_offset_tail,
         )
     )
     + (
         If(quic_frame_protocol.header.frame_type & 0x02 != 0)
-        >> assign_variable_length_int(
+        # >> assign_variable_length_int(
+        #     quic_frame_protocol.temp.payload_len,
+        #     quic_frame_protocol.header.frame_length,
+        #     SliceAfterOp(quic_frame_protocol.header.frame_length_tail, Const(0)),
+        # )
+        >> AssignQUICUInt(
             quic_frame_protocol.temp.payload_len,
             quic_frame_protocol.header.frame_length,
-            SliceAfterOp(quic_frame_protocol.header.frame_length_tail, Const(0)),
+            quic_frame_protocol.header.frame_length_tail,
         )
     )
 ) + (
@@ -367,13 +377,13 @@ quic_frame_protocol.selector = (
         stack.ip.header.saddr,
         stack.udp.header.src_port,
         quic_frame_protocol.header.stream_id,
-        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7)),
     ],
     [
         stack.ip.header.daddr,
         stack.udp.header.dst_port,
         quic_frame_protocol.header.stream_id,
-        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7)),
     ],
 )
 
