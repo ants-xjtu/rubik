@@ -49,7 +49,7 @@ with open(argv[1]) as rules_file:
                             for code in part.split(" "):
                                 content += chr(int(code, 16))
                     if expect_uri:
-                        info["uri_content"] = content
+                        info["uri"] = content
                         expect_uri = False
                     else:
                         info["content"] = content
@@ -64,12 +64,16 @@ with open(argv[1]) as rules_file:
             content.append(length & 0x00FF)
             content.extend(bs)
 
-        if "uri_content" not in info:
+        if "uri" not in info:
             if "content" in info:
+                assert info["content"] != ""
+                info["content_length"] = len(info["content"])
                 info_list.append(info)
         else:
+            info["uri_length"] = len(info["uri"])
             if "content" not in info:
                 info["content"] = ""
+            info["content_length"] = len(info["content"])
             http_info_list.append(info)
 
 print("#raw:", len(info_list))

@@ -172,6 +172,8 @@ class Layer:
         self.sdu = prototype.sdu
         self.payload_len = prototype.payload_len
         self.psm = prototype.psm
+        self.to_active = prototype.to_active
+        self.to_passive = prototype.to_passive
 
     def __rshift__(self, dst_layer):
         return Direction(self, dst_layer)
@@ -185,7 +187,8 @@ class ForeignNameMap(NameMapMixin):
         super().__init__()
 
     def handle_get(self, var):
-        return ForeignVar(self.context.query(var))
+        # todo
+        return ForeignVar(list(var.compile4(self.context).read_regs)[0])
 
 
 class ForeignVar(VariableOpMixin):

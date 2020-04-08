@@ -648,7 +648,7 @@ def compile5_call(call, context):
             False,
             f"{call.layout.debug_name}("
             f"{compile6_struct_expr(context.stack.call_struct[call])}, "
-            f"&{context.inst_expr6}->user_data);",
+            f"&{context.prefetch_expr6}->user_data);",
         )
     ]
 
