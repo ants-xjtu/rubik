@@ -952,7 +952,15 @@ def compile3_inst(prototype, context):
             return list(var.compile4(context).read_regs)[0]
 
     if isinstance(prototype.selector, list):
-        return Inst([extract(var) for var in prototype.selector], context.perm_regs)
+        return Inst(
+            [
+                extract(var)
+                if not hasattr(var, "slice")
+                else context.alloc_slice_key_reg(extract(var), var.index.value)
+                for var in prototype.selector
+            ],
+            context.perm_regs,
+        )
     else:
         vars1, vars2 = prototype.selector
         reg1, reg2, dual = [], [], []
