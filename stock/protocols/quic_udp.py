@@ -1,4 +1,4 @@
-from weaver.lang import layout, Bit, Connectionless, Const
+from weaver.lang import layout, Bit, Connectionless, Const, PSMState, PSM, Predicate
 
 class udp_hdr(layout):
     src_port = Bit(16)
@@ -13,6 +13,12 @@ def udp_parser():
     udp = Connectionless()
     udp.header = udp_hdr
     udp.perm = udp_perm
-    udp.selector = ([udp.header.src_port], [udp.header.dst_port])
+    udp.selector = [udp.header.src_port, udp.header.dst_port]
+    start = PSMState(start = True)
+    nothing = PSMState(accept = True)
+
+    udp.psm = PSM(start, nothing)
+    udp.psm.dump = (start >> start) + Predicate(1)
+
 
     return udp

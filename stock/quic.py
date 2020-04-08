@@ -84,7 +84,7 @@ quic_header_protocol.header += (
     If(quic_header_protocol.header.header_form_packet_type & 0x80 == 0)
     >> QUICShortHeader
 )
-quic_header_protocol.preprocess = If(
+quic_header_protocol.prep = If(
     quic_header_protocol.header_contain(QUICLongHeaderPart1)
 ) >> Assign(
     stack.udp.perm.dst_conn_id_len,
@@ -306,6 +306,7 @@ class QUICFrameTempData(layout):
     length = Bit(64)
     offset = Bit(64)
     payload_len = Bit(64)
+    real_payload_len = Bit(64)
     data = Bit()
 
 
@@ -372,20 +373,16 @@ quic_frame_protocol.prep = (
     >> Assign(quic_frame_protocol.temp.data, quic_frame_protocol.payload)
 )
 
-quic_frame_protocol.selector = (
+quic_frame_protocol.selector = \
     [
         stack.ip.header.saddr,
         stack.udp.header.src_port,
-        quic_frame_protocol.header.stream_id,
-        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7)),
-    ],
-    [
         stack.ip.header.daddr,
         stack.udp.header.dst_port,
         quic_frame_protocol.header.stream_id,
-        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7)),
-    ],
-)
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
+    ]
+
 
 
 class QUICFramePermData(layout):
@@ -400,8 +397,7 @@ quic_frame_protocol.perm = QUICFramePermData
 
 quic_frame_protocol.seq = Sequence(
     meta=quic_frame_protocol.temp.offset,
-    data=quic_frame_protocol.temp.data,
-    data_len=quic_frame_protocol.temp.payload_len,
+    data=SliceBeforeOp(quic_frame_protocol.temp.data, quic_frame_protocol.temp.payload_len),
 )
 
 dump = PSMState(start=True, accept=True)
@@ -410,6 +406,10 @@ frag = PSMState()
 quic_frame_protocol.psm = PSM(dump, frag)
 
 quic_frame_protocol.psm.other_frame = (dump >> dump) + Predicate(
+    quic_frame_protocol.header_contain(QUICStreamFrameStreamID) == 0
+)
+
+quic_frame_protocol.psm.frag_other_frame = (frag >> frag) + Predicate(
     quic_frame_protocol.header_contain(QUICStreamFrameStreamID) == 0
 )
 
@@ -436,7 +436,7 @@ quic_frame_protocol.event.asm = (
     )
     >> Assemble()
 )
-quic_frame_protocol.event.length = If(1) >> (
+quic_frame_protocol.event.length = If(1) >> (Assign(quic_frame_protocol.temp.real_payload_len, quic_frame_protocol.payload_len) + (
     (
         If(quic_frame_protocol.header.frame_type & 0xF0 == 0)
         >> (
@@ -471,13 +471,19 @@ quic_frame_protocol.event.length = If(1) >> (
             )
         )
     )
+))
+
+quic_frame_protocol.event.sdu = If(1) >> (
+    AssignSDU(quic_frame_protocol.payload[quic_frame_protocol.temp.length:])
 )
 
+quic_frame_protocol.event += quic_frame_protocol.event.asm, quic_frame_protocol.event.length 
+quic_frame_protocol.event += quic_frame_protocol.event.length, quic_frame_protocol.event.sdu
 
 stack.quic_frame_protocol = quic_frame_protocol
 stack += (stack.quic_header_protocol >> stack.quic_frame_protocol) + Predicate(
     stack.quic_header_protocol.psm.loop
 )
 stack += (stack.quic_frame_protocol >> stack.quic_frame_protocol) + Predicate(
-    stack.quic_frame_protocol.payload_len > stack.quic_frame_protocol.temp.length
+    stack.quic_frame_protocol.temp.real_payload_len > stack.quic_frame_protocol.temp.length
 )
