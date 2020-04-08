@@ -6,6 +6,7 @@ content = bytearray()
 
 with open(argv[1]) as rules_file:
     info_list = []
+    http_info_list = []
     for rule in rules_file:
         info = {}
         groups = search(
@@ -63,12 +64,15 @@ with open(argv[1]) as rules_file:
             content.append(length & 0x00FF)
             content.extend(bs)
 
-        if "content" not in info:
-            info["content"] = ""
         if "uri_content" not in info:
-            info["uri_content"] = ""
-        info_list.append(info)
+            if "content" in info:
+                info_list.append(info)
+        else:
+            if "content" not in info:
+                info["content"] = ""
+            http_info_list.append(info)
 
-print("#rule:", len(info_list))
+print("#raw:", len(info_list))
+print("#http:", len(http_info_list))
 with open("snort.cfg", "w") as cfg_file:
-    dump({"rules": tuple(info_list)}, cfg_file)
+    dump({"raw": tuple(info_list), "http": tuple(http_info_list)}, cfg_file)
