@@ -309,7 +309,6 @@ class QUICFrameTempData(layout):
     real_payload_len = Bit(64)
     data = Bit()
 
-
 def assign_variable_length_int(dst, head, tail):
     return (
         Assign(dst, head & 0b00111111)
@@ -335,33 +334,49 @@ def assign_variable_length_int(dst, head, tail):
 
 quic_frame_protocol.temp = QUICFrameTempData
 quic_frame_protocol.prep = (
-    If(quic_frame_protocol.header.frame_type & 0xF0 != 0)
-    >> (
-        If(quic_frame_protocol.header.frame_type & 0x04 == 0)
-        >> Assign(quic_frame_protocol.temp.offset, 0)
-        >> Else()
-        # >> assign_variable_length_int(
-        #     quic_frame_protocol.temp.offset,
-        #     quic_frame_protocol.header.frame_offset,
-        #     SliceAfterOp(quic_frame_protocol.header.frame_offset_tail, Const(0)),
-        # )
-        >> AssignQUICUInt(
-            quic_frame_protocol.temp.offset,
-            quic_frame_protocol.header.frame_offset,
-            quic_frame_protocol.header.frame_offset_tail,
+    If(quic_frame_protocol.header.frame_type & 0xF0 != 0) >> (
+        (
+            If(quic_frame_protocol.header.frame_type & 0x04 == 0)
+            >> Assign(quic_frame_protocol.temp.offset, 0)
+            >> Else()
+            >> AssignQUICUInt(
+                quic_frame_protocol.temp.offset,
+                quic_frame_protocol.header.frame_offset,
+                quic_frame_protocol.header.frame_offset_tail,
+            )
         )
-    )
-    + (
-        If(quic_frame_protocol.header.frame_type & 0x02 != 0)
-        # >> assign_variable_length_int(
-        #     quic_frame_protocol.temp.payload_len,
-        #     quic_frame_protocol.header.frame_length,
-        #     SliceAfterOp(quic_frame_protocol.header.frame_length_tail, Const(0)),
-        # )
-        >> AssignQUICUInt(
-            quic_frame_protocol.temp.payload_len,
-            quic_frame_protocol.header.frame_length,
-            quic_frame_protocol.header.frame_length_tail,
+        + (
+            If(quic_frame_protocol.header.frame_type & 0x02 != 0)
+            >> (
+                AssignQUICUInt(
+                    quic_frame_protocol.temp.payload_len,
+                    quic_frame_protocol.header.frame_length,
+                    quic_frame_protocol.header.frame_length_tail,
+                ) + 
+                Assign(
+                    quic_frame_protocol.temp.length, quic_frame_protocol.temp.payload_len
+                )
+            ) >> 
+            Else() >> Assign(quic_frame_protocol.temp.length, 0)
+        )
+    ) >> Else() >> (
+        (
+            If(
+                (quic_frame_protocol.header.frame_type == 0x0D)
+                | (quic_frame_protocol.header.frame_type == 0x0F)
+                | (quic_frame_protocol.header.frame_type == 0x0E)
+                | (quic_frame_protocol.header.frame_type == 0x07)
+                | (quic_frame_protocol.header.frame_type == 0x0C)
+                | (quic_frame_protocol.header.frame_type == 0x04)
+                | (quic_frame_protocol.header.frame_type == 0x06)
+                | (quic_frame_protocol.header.frame_type == 0x05)
+                | (quic_frame_protocol.header.frame_type == 0x02)
+            )
+            >> Assign(quic_frame_protocol.temp.length, 0)
+        )
+        + (
+            If(quic_frame_protocol.header.frame_type == 0x00)
+            >> Assign(quic_frame_protocol.temp.length, quic_frame_protocol.payload_len)
         )
     )
 ) + (
@@ -371,7 +386,7 @@ quic_frame_protocol.prep = (
     + Assign(quic_frame_protocol.temp.payload_len, 0)
     >> Else()
     >> Assign(quic_frame_protocol.temp.data, quic_frame_protocol.payload)
-)
+) + Assign(quic_frame_protocol.temp.real_payload_len, quic_frame_protocol.payload_len)
 
 quic_frame_protocol.selector = \
     [
@@ -382,7 +397,6 @@ quic_frame_protocol.selector = \
         quic_frame_protocol.header.stream_id,
         SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
     ]
-
 
 
 class QUICFramePermData(layout):
@@ -436,49 +450,12 @@ quic_frame_protocol.event.asm = (
     )
     >> Assemble()
 )
-quic_frame_protocol.event.length = If(1) >> (Assign(quic_frame_protocol.temp.real_payload_len, quic_frame_protocol.payload_len) + (
-    (
-        If(quic_frame_protocol.header.frame_type & 0xF0 == 0)
-        >> (
-            If(
-                (quic_frame_protocol.header.frame_type == 0x0D)
-                | (quic_frame_protocol.header.frame_type == 0x0F)
-                | (quic_frame_protocol.header.frame_type == 0x0E)
-                | (quic_frame_protocol.header.frame_type == 0x07)
-                | (quic_frame_protocol.header.frame_type == 0x0C)
-                | (quic_frame_protocol.header.frame_type == 0x04)
-                | (quic_frame_protocol.header.frame_type == 0x06)
-                | (quic_frame_protocol.header.frame_type == 0x05)
-                | (quic_frame_protocol.header.frame_type == 0x02)
-            )
-            >> Assign(quic_frame_protocol.temp.length, 0)
-        )
-        + (
-            If(quic_frame_protocol.header.frame_type == 0x00)
-            >> Assign(quic_frame_protocol.temp.length, quic_frame_protocol.payload_len)
-        )
-    )
-    + (
-        If(quic_frame_protocol.header.frame_type & 0xF0 != 0)
-        >> (
-            If(quic_frame_protocol.header.frame_type & 0x02 == 0)
-            >> Assign(quic_frame_protocol.temp.length, 0)
-        )
-        + (
-            If(quic_frame_protocol.header.frame_type & 0x02 != 0)
-            >> Assign(
-                quic_frame_protocol.temp.length, quic_frame_protocol.temp.payload_len
-            )
-        )
-    )
-))
 
 quic_frame_protocol.event.sdu = If(1) >> (
     AssignSDU(quic_frame_protocol.payload[quic_frame_protocol.temp.length:])
 )
 
-quic_frame_protocol.event += quic_frame_protocol.event.asm, quic_frame_protocol.event.length 
-quic_frame_protocol.event += quic_frame_protocol.event.length, quic_frame_protocol.event.sdu
+quic_frame_protocol.event += quic_frame_protocol.event.asm, quic_frame_protocol.event.sdu
 
 stack.quic_frame_protocol = quic_frame_protocol
 stack += (stack.quic_header_protocol >> stack.quic_frame_protocol) + Predicate(
