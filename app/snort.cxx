@@ -50,14 +50,6 @@ public:
     }
 };
 
-WV_U8 add_srcport_checker(Rule* rule, WV_U16 port)
-{
-    RuleChecker* checker = new CheckSrcPort(port);
-    checker->next = rule->checker_head;
-    rule->checker_head = checker;
-    return 0;
-}
-
 class CheckDstPort : public RuleChecker {
     WV_U16 dstport;
 
@@ -72,11 +64,36 @@ public:
     }
 };
 
-WV_U8 add_dstport_checker(Rule* rule, WV_U16 port)
+class CheckUri : public RuleChecker {
+    WV_ByteSlice pattern;
+
+public:
+    CheckUri(WV_ByteSlice pattern)
+        : pattern(pattern)
+    {
+    }
+    virtual WV_U8 check(Packet& packet)
+    {
+        return 1;
+    }
+};
+
+WV_ByteSlice clone_slice(const WV_Byte* cursor, WV_U32 length)
 {
-    RuleChecker* checker = new CheckDstPort(port);
-    checker->next = rule->checker_head;
-    rule->checker_head = checker;
+    WV_ByteSlice slice = { .cursor = new WV_Byte[length], .length = length };
+    memcpy((WV_Any)slice.cursor, cursor, length);
+    return slice;
+}
+
+WV_ByteSlice clone_slice(const char* cursor, WV_U32 length)
+{
+    return clone_slice(reinterpret_cast<const WV_Byte*>(cursor), length);
+}
+
+WV_U8 add_checker(Rule& rule, RuleChecker* checker)
+{
+    checker->next = rule.checker_head;
+    rule.checker_head = checker;
     return 0;
 }
 
@@ -115,10 +132,17 @@ extern "C" WV_U8 WV_Setup()
         assert(config_setting_lookup_int(rule, "srcport", &srcport));
         assert(config_setting_lookup_int(rule, "dstport", &dstport));
         if (srcport != 0) {
-            add_srcport_checker(&raw_rules[i], srcport);
+            add_checker(raw_rules[i], new CheckSrcPort(srcport));
         }
         if (dstport != 0) {
-            add_dstport_checker(&raw_rules[i], dstport);
+            add_checker(raw_rules[i], new CheckDstPort(dstport));
+        }
+        const char* uri_pattern;
+        int uri_pattern_length;
+        assert(config_setting_lookup_string(rule, "uri", &uri_pattern));
+        assert(config_setting_lookup_int(rule, "uri_length", &uri_pattern_length));
+        if (uri_pattern_length != 0) {
+            add_checker(raw_rules[i], new CheckUri(clone_slice(uri_pattern, uri_pattern_length)));
         }
     }
 
