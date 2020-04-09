@@ -16,4 +16,4 @@ stack += (stack.ip >> stack.udp) + Predicate(
     (stack.ip.psm.dump | stack.ip.psm.last) & (stack.ip.header.protocol == 17)
 )
 
-stack.tcp.layer.context.buffer_data = False
+# stack.tcp.layer.context.buffer_data = False

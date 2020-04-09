@@ -210,7 +210,7 @@ extern "C" WV_U8 report_status(H11* args, WV_Any* context)
     UserData* user_data;
     if (*context == NULL) {
         *context = user_data = new UserData;
-        printf("[report] setup user data\n");
+        // printf("[report] setup user data\n");
         user_data = static_cast<UserData*>(*context);
         user_data->raw_ac_state = 0;
         memset(user_data->active_raw, 0, sizeof(WV_Byte) * 256);
