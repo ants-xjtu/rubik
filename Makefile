@@ -27,6 +27,7 @@ INC= -I$(INC_DIR) -I$(INC_DIR)/runtime -I$(INC_DIR)/runtime/tommyds
 
 ### SOURCE FILES ###
 
+LIB_FLAGS += -lstdc++
 ifeq ($(T), pcap)
 LIB_FLAGS += -lpcap
 endif
