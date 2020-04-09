@@ -49,31 +49,25 @@ with open(argv[1]) as rules_file:
                             for code in part.split(" "):
                                 content += chr(int(code, 16))
                     if expect_uri:
+                        # assert "uri" not in info
                         info["uri"] = content
                         expect_uri = False
                     else:
-                        info["content"] = content
+                        if "content" not in info:
+                            info["content"] = content
             else:
                 if arg.strip() == "http_uri":
                     expect_uri = True
 
-        def write_length_value(bs):
-            length = len(bs)
-            assert length < 1 << 16
-            content.append((length & 0xFF00) >> 8)
-            content.append(length & 0x00FF)
-            content.extend(bs)
-
         if "uri" not in info:
-            if "content" in info:
-                assert info["content"] != ""
-                info["content_length"] = len(info["content"])
-                info_list.append(info)
-        else:
-            info["uri_length"] = len(info["uri"])
-            if "content" not in info:
-                info["content"] = ""
+            info["uri"] = ""
+        info["uri_length"] = len(info["uri"])
+
+        if "content" in info:
+            assert info["content"] != ""
             info["content_length"] = len(info["content"])
+            info_list.append(info)
+        else:
             http_info_list.append(info)
 
 print("#raw:", len(info_list))

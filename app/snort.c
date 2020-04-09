@@ -13,14 +13,60 @@
 #define assert(x) x
 #endif
 
-ACISM *raw_ac, *http_ac;
-struct {
-    WV_ByteSlice message;
+ACISM *raw_ac;
+
+typedef struct {
+    WV_ByteSlice sdu;
     WV_U16 srcport;
     WV_U16 dstport;
-    WV_ByteSlice uri;
-} raw_rules[2048], http_rules[2048];
-WV_U16 raw_count;
+} Packet;
+
+typedef WV_U8 (*RuleCheckerFunc)(Packet*, WV_Any);
+
+typedef struct _RuleChecker {
+    RuleCheckerFunc check;
+    WV_Any context;
+    struct _RuleChecker* next;
+} RuleChecker;
+
+typedef struct {
+    WV_ByteSlice message;
+    RuleChecker* checker_head;
+} Rule;
+Rule raw_rules[2048], http_rules[2048];
+WV_U16 raw_count, http_count;
+
+WV_U8 check_srcport(Packet* packet, WV_Any context)
+{
+    return packet->srcport == *(WV_U16*)context;
+}
+
+WV_U8 add_srcport_checker(Rule* rule, WV_U16 port)
+{
+    RuleChecker* checker = malloc(sizeof(RuleChecker) + sizeof(WV_U16));
+    WV_U16* match_port = (WV_U16*)((WV_Byte*)checker + sizeof(RuleChecker));
+    *match_port = port;
+    checker->check = check_srcport;
+    checker->context = match_port;
+    checker->next = rule->checker_head;
+    rule->checker_head = checker;
+}
+
+WV_U8 check_dstport(Packet* packet, WV_Any context)
+{
+    return packet->dstport == *(WV_U16*)context;
+}
+
+WV_U8 add_dstport_checker(Rule* rule, WV_U16 port)
+{
+    RuleChecker* checker = malloc(sizeof(RuleChecker) + sizeof(WV_U16));
+    WV_U16* match_port = (WV_U16*)((WV_Byte*)checker + sizeof(RuleChecker));
+    *match_port = port;
+    checker->check = check_dstport;
+    checker->context = match_port;
+    checker->next = rule->checker_head;
+    rule->checker_head = checker;
+}
 
 WV_U8 WV_Setup()
 {
@@ -49,15 +95,26 @@ WV_U8 WV_Setup()
             .cursor = malloc(sizeof(WV_Byte) * message_length),
             .length = message_length,
         };
+
+        raw_rules[i].checker_head = NULL;
+
         int srcport, dstport;
         assert(config_setting_lookup_int(rule, "srcport", &srcport));
         assert(config_setting_lookup_int(rule, "dstport", &dstport));
-        raw_rules[i].srcport = srcport;
-        raw_rules[i].dstport = dstport;
+        if (srcport != 0) {
+            add_srcport_checker(&raw_rules[i], srcport);
+        }
+        if (dstport != 0) {
+            add_dstport_checker(&raw_rules[i], dstport);
+        }
         memcpy((WV_Any)raw_rules[i].message.cursor, message, message_length);
     }
 
-    printf("[setup] build raw ac (count: %u)\n", raw_count);
+    config_setting_t* http_settings = config_lookup(&config, "http");
+    http_count = config_setting_length(http_settings);
+    assert(http_count < 2048);
+
+    printf("[setup] build ac (count: %u)\n", raw_count);
     raw_ac = acism_create(raw_strv, raw_count);
 
     printf("[setup] finishing\n");
@@ -106,13 +163,11 @@ int on_match(int strnum, int textpos, WV_Any context)
 WV_U8 report_status(H11* args, WV_Any* context)
 {
     WV_U8 state = args->_203;
-    WV_ByteSlice sdu = args->_204;
-    WV_U16 srcport = args->_201;
-    WV_U16 dstport = args->_202;
+    Packet packet = { .sdu = args->_204, .srcport = args->_201, .dstport = args->_202 };
 
     // printf("state: %u len(content): %u\n", state, sdu.length);
 
-    if (sdu.length == 0) {
+    if (packet.sdu.length == 0) {
         return 0;
     }
 
@@ -126,20 +181,29 @@ WV_U8 report_status(H11* args, WV_Any* context)
         memset(user_data->alerted_raw, 0, sizeof(WV_Byte) * 256);
     }
     user_data = *context;
-    MEMREF text = { .ptr = sdu.cursor, .len = sdu.length };
+    MEMREF text = { .ptr = packet.sdu.cursor, .len = packet.sdu.length };
     acism_more(raw_ac, text, on_match, user_data, &user_data->raw_ac_state);
 
     for (WV_U16 i = 0; i < raw_count; i += 1) {
         if (has_bit(user_data->active_raw, i)) {
-            // printf("rule %u -> %u pkt %u -> %u\n", raw_rules[i].srcport, raw_rules[i].dstport, srcport, dstport);
-            if (
-                (raw_rules[i].srcport == 0 || srcport == raw_rules[i].srcport) && 
-                (raw_rules[i].dstport == 0 || dstport == raw_rules[i].dstport)) {
+            WV_U8 pass = 1;
+            for (RuleChecker* checker = raw_rules[i].checker_head; checker != NULL; checker = checker->next) {
+                if (!checker->check(&packet, checker->context)) {
+                    pass = 0;
+                    break;
+                }
+            }
+            if (pass) {
                 printf("[match] %*s\n", raw_rules[i].message.length, raw_rules[i].message.cursor);
                 clear_bit(user_data->active_raw, i);
                 set_bit(user_data->alerted_raw, i);
             }
         }
+    }
+
+    if (state == 7) {
+        free(user_data);
+        *context = NULL;
     }
 
     return 0;
