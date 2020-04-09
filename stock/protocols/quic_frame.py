@@ -1,40 +1,40 @@
+# pylint: disable = unused-wildcard-import
 from weaver.lang import *
+
 
 class QUICFrame(layout):
     frame_type = Bit(8)
 
 
-class QUICStreamFrameStreamID(layout):
+class StreamID(layout):
     stream_id = Bit(8)
 
 
-class QUICStreamFrameStreamIDTail(layout):
-    stream_id_tail = Bit(
-        ((Const(1) << ((QUICStreamFrameStreamID.stream_id & 0xC0) >> 6)) - 1) << 3
-    )
+def tail_bit(head):
+    return Bit(((Const(1) << ((head & 0xC0) >> 6)) - 1) << 3)
 
 
-class QUICStreamFrameOffset(layout):
+class StreamIDTail(layout):
+    stream_id_tail = tail_bit(StreamID.stream_id)
+
+
+class FrameOffset(layout):
     frame_offset = Bit(8)
 
 
-class QUICStreamFrameOffsetTail(layout):
-    frame_offset_tail = Bit(
-        ((Const(1) << ((QUICStreamFrameOffset.frame_offset & 0xC0) >> 6)) - 1) << 3
-    )
+class FrameOffsetTail(layout):
+    frame_offset_tail = tail_bit(FrameOffset.frame_offset)
 
 
-class QUICStreamFrameLength(layout):
+class FrameLength(layout):
     frame_length = Bit(8)
 
 
-class QUICStreamFrameLengthTail(layout):
-    frame_length_tail = Bit(
-        ((Const(1) << ((QUICStreamFrameLength.frame_length & 0xC0) >> 6)) - 1) << 3
-    )
+class FrameLengthTail(layout):
+    frame_length_tail = tail_bit(FrameLength.frame_length)
 
 
-class QUICConnectionClose(layout):
+class ConnectionClose(layout):
     error_code = Bit(16)
     reason_phrase_length = Bit(8)
     reason_phrase = Bit(reason_phrase_length << 3)
@@ -55,7 +55,7 @@ class QUICACK(layout):
     ack_block_extra = Bit(((Const(1) << ack_block_upper) - 1) << 3)
 
 
-class QUICMaxStreamData(layout):
+class MaxStreamData(layout):
     max_data_stream_id_upper = Bit(2)
     max_data_stream_id_lower = Bit(6)
     max_data_stream_id_extra = Bit(((Const(1) << max_data_stream_id_upper) - 1) << 3)
@@ -64,39 +64,40 @@ class QUICMaxStreamData(layout):
     max_stream_data_extra = Bit(((Const(1) << max_stream_data_upper) - 1) << 3)
 
 
-class QUICMaxData(layout):
+class MaxData(layout):
     maximum_data = Bit(8)
-    maximum_date_lower = Bit(((Const(1) << ((maximum_data & 0xC0) >> 6)) - 1) << 3)
+    maximum_date_lower = tail_bit(maximum_data)
 
 
-class QUICMaxStreamID(layout):
+class MaxStreamID(layout):
     max_stream_id = Bit(16)
 
 
-class QUICPathChallenge(layout):
+class PathChallenge(layout):
     path_challenge = Bit(64)
 
 
-class QUICPathResponse(layout):
+class PathResponse(layout):
     path_response = Bit(64)
 
 
-class QUICStopsending(layout):
+class StopSending(layout):
     stop_stream_id = Bit(8)
-    stop_stream_id_tail = Bit(((Const(1) << ((stop_stream_id & 0xC0) >> 6)) - 1) << 3)
+    stop_stream_id_tail = tail_bit(stop_stream_id)
     application_error = Bit(16)
 
 
-class QUICRSTStream(layout):
+class RSTStream(layout):
     rst_var_1 = Bit(8)
-    rst_var_2 = Bit(((Const(1) << ((rst_var_1 & 0xC0) >> 6)) - 1) << 3)
+    rst_var_2 = tail_bit(rst_var_1)
     rst_err_code = Bit(16)
     rst_var_3 = Bit(8)
-    rst_var_4 = Bit(((Const(1) << ((rst_var_3 & 0xC0) >> 6)) - 1) << 3)
+    rst_var_4 = tail_bit(rst_var_3)
 
 
 class blank(layout):
     pass
+
 
 class QUICFrameTempData(layout):
     length = Bit(64)
@@ -105,226 +106,137 @@ class QUICFrameTempData(layout):
     real_payload_len = Bit(64)
     data = Bit()
 
+
 def quic_frame_protocol_parser(stack):
     quic_frame_protocol = Connectionless()
     quic_frame_protocol.header = QUICFrame
+    global_frames = blank
+    for frame_type, layout in [
+        (0x01, RSTStream),
+        (0x02, ConnectionClose),
+        (0x06, MaxStreamID),
+        (0x0C, StopSending),
+        (0x0F, PathResponse),
+        (0x0E, PathChallenge),
+        (0x0D, QUICACK),
+        (0x04, MaxData),
+        (0x05, MaxStreamData),
+    ]:
+        global_frames += If(QUICFrame.frame_type == frame_type) >> layout
 
+    def head_tail(head_layout, head_var, tail_layout):
+        return head_layout + (If(head_var & 0xC0 != 0) >> tail_layout)
 
+    frame_type = quic_frame_protocol.header.frame_type
     quic_frame_protocol.header += (
         blank
+        + (If(frame_type & 0xF0 == 0) >> global_frames)
         + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 1)
-            )
-            >> QUICRSTStream
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 2)
-            )
-            >> QUICConnectionClose
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 6)
-            )
-            >> QUICMaxStreamID
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x0C)
-            )
-            >> QUICStopsending
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x0F)
-            )
-            >> QUICPathResponse
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x0E)
-            )
-            >> QUICPathChallenge
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x0D)
-            )
-            >> QUICACK
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x04)
-            )
-            >> QUICMaxData
-        )
-        + (
-            If(
-                (quic_frame_protocol.header.frame_type & 0xF0 == 0)
-                & (quic_frame_protocol.header.frame_type == 0x05)
-            )
-            >> QUICMaxStreamData
-        )
-        + (
-            If(quic_frame_protocol.header.frame_type & 0xF8 == 0x10)
-            >> QUICStreamFrameStreamID
+            If(frame_type & 0xF8 == 0x10)
+            >> head_tail(StreamID, StreamID.stream_id, StreamIDTail)
             + (
-                If(QUICStreamFrameStreamID.stream_id & 0xC0 != 0)
-                >> QUICStreamFrameStreamIDTail
+                If(frame_type & 0x04 != 0)
+                >> head_tail(FrameOffset, FrameOffset.frame_offset, FrameOffsetTail)
             )
             + (
-                If(quic_frame_protocol.header.frame_type & 0x04 != 0)
-                >> QUICStreamFrameOffset
-                + (
-                    If(QUICStreamFrameOffset.frame_offset & 0xC0 != 0)
-                    >> QUICStreamFrameOffsetTail
-                )
-            )
-            + (
-                If(quic_frame_protocol.header.frame_type & 0x02 != 0)
-                >> QUICStreamFrameLength
-                + (
-                    If(QUICStreamFrameLength.frame_length & 0xC0 != 0)
-                    >> QUICStreamFrameLengthTail
-                )
+                If(frame_type & 0x02 != 0)
+                >> head_tail(FrameLength, FrameLength.frame_length, FrameLengthTail)
             )
         )
     )
 
-
-
-
-    def assign_variable_length_int(dst, head, tail):
-        return (
-            Assign(dst, head & 0b00111111)
-            + (If(head & 0b11000000) >> Assign(dst, (dst << 8) + tail[0]))
-            + (
-                If(head & 0b10000000)
-                >> (
-                    Assign(dst, (dst << 8) + tail[1])
-                    + Assign(dst, (dst << 8) + tail[2])
-                    + (
-                        If(head & 0b01000000)
-                        >> (
-                            Assign(dst, (dst << 8) + tail[3])
-                            + Assign(dst, (dst << 8) + tail[4])
-                            + Assign(dst, (dst << 8) + tail[5])
-                            + Assign(dst, (dst << 8) + tail[6])
-                        )
-                    )
-                )
-            )
-        )
-
-
     quic_frame_protocol.temp = QUICFrameTempData
     quic_frame_protocol.prep = (
-        If(quic_frame_protocol.header.frame_type & 0xF0 != 0) >> (
-            (
-                If(quic_frame_protocol.header.frame_type & 0x04 == 0)
-                >> Assign(quic_frame_protocol.temp.offset, 0)
-                >> Else()
-                >> AssignQUICUInt(
-                    quic_frame_protocol.temp.offset,
-                    quic_frame_protocol.header.frame_offset,
-                    quic_frame_protocol.header.frame_offset_tail,
-                )
-            )
-            + (
-                If(quic_frame_protocol.header.frame_type & 0x02 != 0)
-                >> (
-                    AssignQUICUInt(
-                        quic_frame_protocol.temp.payload_len,
-                        quic_frame_protocol.header.frame_length,
-                        quic_frame_protocol.header.frame_length_tail,
-                    ) + 
-                    Assign(
-                        quic_frame_protocol.temp.length, quic_frame_protocol.temp.payload_len
+        (
+            If(quic_frame_protocol.header.frame_type & 0xF0 != 0)
+            >> (
+                (
+                    If(quic_frame_protocol.header.frame_type & 0x04 == 0)
+                    >> Assign(quic_frame_protocol.temp.offset, 0)
+                    >> Else()
+                    >> AssignQUICUInt(
+                        quic_frame_protocol.temp.offset,
+                        quic_frame_protocol.header.frame_offset,
+                        quic_frame_protocol.header.frame_offset_tail,
                     )
-                ) >> 
-                Else() >> Assign(quic_frame_protocol.temp.length, 0)
-            )
-        ) >> Else() >> (
-            (
-                If(
-                    (quic_frame_protocol.header.frame_type == 0x0D)
-                    | (quic_frame_protocol.header.frame_type == 0x0F)
-                    | (quic_frame_protocol.header.frame_type == 0x0E)
-                    | (quic_frame_protocol.header.frame_type == 0x07)
-                    | (quic_frame_protocol.header.frame_type == 0x0C)
-                    | (quic_frame_protocol.header.frame_type == 0x04)
-                    | (quic_frame_protocol.header.frame_type == 0x06)
-                    | (quic_frame_protocol.header.frame_type == 0x05)
-                    | (quic_frame_protocol.header.frame_type == 0x02)
                 )
+                + (
+                    If(quic_frame_protocol.header.frame_type & 0x02 != 0)
+                    >> (
+                        AssignQUICUInt(
+                            quic_frame_protocol.temp.payload_len,
+                            quic_frame_protocol.header.frame_length,
+                            quic_frame_protocol.header.frame_length_tail,
+                        )
+                        + Assign(
+                            quic_frame_protocol.temp.length,
+                            quic_frame_protocol.temp.payload_len,
+                        )
+                    )
+                    >> Else()
+                    >> Assign(quic_frame_protocol.temp.length, 0)
+                )
+            )
+            >> Else()
+            >> (
+                If(frame_type == 0)
+                >> Assign(
+                    quic_frame_protocol.temp.length, quic_frame_protocol.payload_len
+                )
+                >> Else()
                 >> Assign(quic_frame_protocol.temp.length, 0)
             )
-            + (
-                If(quic_frame_protocol.header.frame_type == 0x00)
-                >> Assign(quic_frame_protocol.temp.length, quic_frame_protocol.payload_len)
-            )
         )
-    ) + (
-        If(quic_frame_protocol.header_contain(QUICStreamFrameStreamID) == 0)
-        >> Assign(quic_frame_protocol.temp.offset, 0)
-        + Assign(quic_frame_protocol.temp.data, NoData())
-        + Assign(quic_frame_protocol.temp.payload_len, 0)
-        >> Else()
-        >> Assign(quic_frame_protocol.temp.data, quic_frame_protocol.payload)
-    ) + Assign(quic_frame_protocol.temp.real_payload_len, quic_frame_protocol.payload_len)
+        + (
+            If(quic_frame_protocol.header_contain(StreamID) == 0)
+            >> (
+                Assign(quic_frame_protocol.temp.offset, 0)
+                + Assign(quic_frame_protocol.temp.data, NoData())
+                + Assign(quic_frame_protocol.temp.payload_len, 0)
+            )
+            >> Else()
+            >> Assign(quic_frame_protocol.temp.data, quic_frame_protocol.payload)
+        )
+        + Assign(
+            quic_frame_protocol.temp.real_payload_len, quic_frame_protocol.payload_len
+        )
+    )
 
-    quic_frame_protocol.selector = \
-        [
-            stack.ip.header.saddr,
-            stack.udp.header.src_port,
-            stack.ip.header.daddr,
-            stack.udp.header.dst_port,
-            quic_frame_protocol.header.stream_id,
-            SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7))
-        ]
+    quic_frame_protocol.selector = [
+        stack.ip.header.saddr,
+        stack.udp.header.src_port,
+        stack.ip.header.daddr,
+        stack.udp.header.dst_port,
+        quic_frame_protocol.header.stream_id,
+        SliceBeforeOp(quic_frame_protocol.header.stream_id_tail, Const(7)),
+    ]
 
     # TODO: states for all data has passed middlebox
 
     quic_frame_protocol.seq = Sequence(
         meta=quic_frame_protocol.temp.offset,
-        data=SliceBeforeOp(quic_frame_protocol.temp.data, quic_frame_protocol.temp.payload_len),
+        data=SliceBeforeOp(
+            quic_frame_protocol.temp.data, quic_frame_protocol.temp.payload_len
+        ),
     )
 
     dump = PSMState(start=True, accept=True)
     frag = PSMState()
-
     quic_frame_protocol.psm = PSM(dump, frag)
-
     quic_frame_protocol.psm.other_frame = (dump >> dump) + Predicate(
-        quic_frame_protocol.header_contain(QUICStreamFrameStreamID) == 0
+        quic_frame_protocol.header_contain(StreamID) == 0
     )
-
     quic_frame_protocol.psm.frag_other_frame = (frag >> frag) + Predicate(
-        quic_frame_protocol.header_contain(QUICStreamFrameStreamID) == 0
+        quic_frame_protocol.header_contain(StreamID) == 0
     )
-
     quic_frame_protocol.psm.more_frag = (dump >> frag) + Predicate(
-        quic_frame_protocol.header_contain(QUICStreamFrameStreamID)
-        & (quic_frame_protocol.header.frame_type & 0x01 == 0)
+        quic_frame_protocol.header_contain(StreamID) & (frame_type & 0x01 == 0)
     )
-
     quic_frame_protocol.psm.more_normal_frag = (frag >> frag) + Predicate(
-        quic_frame_protocol.header_contain(QUICStreamFrameStreamID)
-        & (quic_frame_protocol.header.frame_type & 0x01 == 0)
+        quic_frame_protocol.header_contain(StreamID) & (frame_type & 0x01 == 0)
     )
-
     quic_frame_protocol.psm.receiving_all = (frag >> dump) + Predicate(
-        quic_frame_protocol.header_contain(QUICStreamFrameStreamID)
+        quic_frame_protocol.header_contain(StreamID)
         & (quic_frame_protocol.v.header.frame_type & 0x01 != 0)
     )
 
@@ -338,8 +250,11 @@ def quic_frame_protocol_parser(stack):
     )
 
     quic_frame_protocol.event.sdu = If(1) >> (
-        AssignSDU(quic_frame_protocol.payload[quic_frame_protocol.temp.length:])
+        AssignSDU(quic_frame_protocol.payload[quic_frame_protocol.temp.length :])
     )
 
-    quic_frame_protocol.event += quic_frame_protocol.event.asm, quic_frame_protocol.event.sdu
+    quic_frame_protocol.event += (
+        quic_frame_protocol.event.asm,
+        quic_frame_protocol.event.sdu,
+    )
     return quic_frame_protocol
