@@ -6,11 +6,13 @@ class report_status(layout):
     srcport = Bit(16)
     dstport = Bit(16)
     state = Bit(8)
+    is_request = Bit(8)
     content = Bit()
 
 
 stack.tcp.event.report = If(1) >> (
-    (
+    Assign(report_status.is_request, stack.tcp.to_passive)
+    + (
         If(stack.tcp.to_passive)
         >> (
             Assign(report_status.srcport, stack.tcp.header.sport)
