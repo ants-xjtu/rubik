@@ -1,1 +1,3 @@
 native/runtime/tommyds/* linguist-vendored
+app/http-parser/* linguist-vendored
+app/libac/* linguist-vendored
