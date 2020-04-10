@@ -111,6 +111,14 @@ class LayerContext:
         self.perm_regs.append(self.stack.reg_count)
         self.stack.reg_count += 1
 
+    def alloc_slice_key_reg(self, slice_reg, index):
+        slice_info = self.stack.reg_map[slice_reg]
+        reg_id = self.stack.reg_count
+        reg = SliceKeyReg(reg_id, slice_info.expr6, index, slice_info.debug_name)
+        self.stack.reg_map[reg_id] = reg
+        self.stack.reg_count += 1
+        return reg_id
+
     def query(self, var):
         return self.var_map[var.var_id]
 
@@ -283,6 +291,9 @@ class HeaderReg:
 
         self.expr6 = f"{compile6_struct_expr(self.struct_id)}->_{self.reg_id}"
 
+    def assign_key7(self, key7):
+        return f"{key7}._{self.reg_id} = {self.expr6};"
+
 
 class TempReg:
     def __init__(self, reg_id, byte_length, length_expr4, debug_name):
@@ -323,9 +334,7 @@ class CoverSlice:
         self.compile7 = "\n".join(
             [
                 f"{slice_reg.expr6}.cursor = current.cursor;",
-
                 f"{slice_reg.expr6}.length = ({slice_reg.length_expr4.compile6[0]}) >> 3; "
-
                 f"// {slice_reg.length_expr4.compile6[1]}",
                 f"current = WV_SliceAfter(current, {slice_reg.expr6}.length);",
                 f"{parsed_reg.expr6} = 1;",
@@ -713,6 +722,10 @@ class Eval1Op2:
             return expr1_eval1[:expr2_eval1]
         elif self.name == "slice_get":
             return expr1_eval1[expr2_eval1]
+        elif self.name == "bit_and":
+            return expr1_eval1 & expr2_eval1
+        elif self.name == "right_shift":
+            return expr1_eval1 >> expr2_eval1
         else:
             assert False, "unknown op2"
 
@@ -738,6 +751,10 @@ def compile6h_op2(name, expr1, expr2):
         return f"WV_SliceAfter({expr1}, {expr2})"
     elif name == "slice_get":
         return f"({expr1}).cursor[{expr2}]"
+    elif name == "bit_and":
+        return f"({expr1}) & ({expr2})"
+    elif name == "right_shift":
+        return f"({expr1}) >> ({expr2})"
     else:
         assert False, f"unknown op2 {name}"
 
@@ -794,7 +811,9 @@ def compile4_payload():
 
 
 def compile4_content(context):
-    return Expr({StackContext.SEQUENCE}, Eval1Abstract(), (context.content_expr6, "$sdu"))
+    return Expr(
+        {StackContext.SEQUENCE}, Eval1Abstract(), (context.content_expr6, "$sdu")
+    )
 
 
 def compile4_total():
@@ -843,6 +862,62 @@ class Eval3VarEqual:
             pass
 
 
+def compile5_assign_quic_uint(assign, context):
+    reg = context.query(assign.var)
+    reg6 = context.stack.reg_map[reg].expr6
+    head4 = assign.head.compile4(context)
+    tail4 = assign.tail.compile4(context)
+    head6 = head4.compile6[0]
+    tail6 = tail4.compile6[0]
+    return [
+        UpdateReg(
+            reg,
+            Expr({*head4.read_regs, *tail4.read_regs}, Eval1Abstract(), None),
+            False,
+            code_comment(
+                "\n".join(
+                    [
+                        f"{reg6} = {head6} & 0b00111111;",
+                        f"if ({head6} & 0b11000000) {reg6} = ({reg6} << 8) + {tail6}.cursor[0];",
+                        f"if ({head6} & 0b10000000) "
+                        + indent_join(
+                            [
+                                f"{reg6} = ({reg6} << 8) + {tail6}.cursor[1];",
+                                f"{reg6} = ({reg6} << 8) + {tail6}.cursor[2];",
+                                f"if ({head6} & 0b01000000) "
+                                + indent_join(
+                                    [
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[3];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[4];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[5];",
+                                        f"{reg6} = ({reg6} << 8) + {tail6}.cursor[6];",
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                f"{context.stack.reg_map[reg].debug_name} = QUIC_UInt({head4.compile6[1]}, {tail4.compile6[1]})",
+            ),
+        )
+    ]
+
+
+def compile5_assign_sdu(expr, context):
+    expr4 = expr.compile4(context)
+    return [
+        UpdateReg(
+            StackContext.SEQUENCE,
+            Expr(expr4.read_regs, Eval1Abstract(), None),
+            False,
+            code_comment(
+                f"{context.content_expr6} = {expr4.compile6[0]};",
+                f"assign sdu <- {expr4.compile6[1]}",
+            ),
+        )
+    ]
+
+
 class Eval1Abstract:
     def eval1(self, context):
         raise NotConstant()
@@ -851,6 +926,21 @@ class Eval1Abstract:
 # placeholder in UpdateReg which is command
 # command implements compile7 directly, so abstract_expr.compile6 should never be used
 abstract_expr = Expr(set(), Eval1Abstract(), None)
+
+
+class SliceKeyReg:
+    def __init__(self, reg_id, slice_reg6, index, slice_debug):
+        self.reg_id = reg_id
+        self.slice_reg6 = slice_reg6
+        self.index = index
+        self.debug_name = f"<{slice_debug}> as key"
+
+    def assign_key7(self, key7):
+        return "\n".join(
+            f"{key7}._{self.reg_id}[{i}] = ({self.slice_reg6}).length > {i} ? "
+            f"({self.slice_reg6}).cursor[{i}] : 0;"
+            for i in range(self.index)
+        )
 
 
 # compile pipeline stages
@@ -862,14 +952,32 @@ def compile3_inst(prototype, context):
             return list(var.compile4(context).read_regs)[0]
 
     if isinstance(prototype.selector, list):
-        return Inst([extract(var) for var in prototype.selector], context.perm_regs,)
+        return Inst(
+            [
+                extract(var)
+                if not hasattr(var, "slice")
+                else context.alloc_slice_key_reg(extract(var), var.index.value)
+                for var in prototype.selector
+            ],
+            context.perm_regs,
+        )
     else:
         vars1, vars2 = prototype.selector
+        reg1, reg2, dual = [], [], []
+        for v1, v2 in zip(vars1, vars2):
+            r1, r2 = extract(v1), extract(v2)
+            if r1 == r2:
+                if hasattr(v1, "slice"):  # too dirty for me to stand with
+                    assert v1.index.value == v2.index.value
+                    dr = context.alloc_slice_key_reg(r1, v1.index.value)
+                else:
+                    dr = r1
+                dual.append(dr)
+            else:
+                reg1.append(r1)
+                reg2.append(r2)
         return BiInst(
-            [extract(var) for var in vars1],
-            [extract(var) for var in vars2],
-            context.perm_regs,
-            AutoVar.from_bit(prototype.rev_flag),
+            reg1, reg2, dual, context.perm_regs, AutoVar.from_bit(prototype.rev_flag),
         )
 
 
@@ -1009,7 +1117,9 @@ class PrefetchInst:
             [
                 *[
                     code_comment(
-                        f"{context.prealloc_expr6}->k._{reg} = {context.stack.reg_map[reg].expr6};",
+                        context.stack.reg_map[reg].assign_key7(
+                            f"{context.prealloc_expr6}->k"
+                        ),
                         f"set key for {context.stack.reg_map[reg].debug_name}",
                     )
                     for reg in context.inst.key_regs
@@ -1042,11 +1152,12 @@ class CreateInst:
 
 
 class BiInst:
-    def __init__(self, key_regs1, key_regs2, inst_regs, to_active):
+    def __init__(self, key_regs1, key_regs2, dual_regs, inst_regs, to_active):
         self.key_regs1 = key_regs1
         self.key_regs2 = key_regs2
+        self.dual_regs = dual_regs
         self.inst_regs = inst_regs
-        self.key_regs = key_regs1 + key_regs2
+        self.key_regs = self.key_regs1 + self.key_regs2 + self.dual_regs
         self.prefetch = PrefetchInst  # same as Inst
         self.create = CreateBiInst
         self.create_light = CreateLightBiInst
@@ -1115,7 +1226,9 @@ class CreateBiInst:
                 [
                     *[
                         code_comment(
-                            f"{context.prealloc_expr6}->k_rev._{reg} = {context.stack.reg_map[reg].expr6};",
+                            context.stack.reg_map[reg].assign_key7(
+                                f"{context.prealloc_expr6}->k_rev"
+                            ),
                             f"set reversed key for {context.stack.reg_map[reg].debug_name}",
                         )
                         for reg in context.inst.key_regs

@@ -34,6 +34,8 @@ from weaver.compile import (
     compile5_assemble,
     compile5_if,
     compile5_call,
+    compile5_assign_quic_uint,
+    compile5_assign_sdu,
 )
 
 
@@ -79,6 +81,9 @@ class UniversalNumberOpMixin:
     def __lshift__(self, other):
         return LeftShiftOp(self, Const.wrap_int(other))
 
+    def __rshift__(self, other):
+        return RightShiftOp(self, Const.wrap_int(other))
+
     def __sub__(self, other):
         return SubOp(self, Const.wrap_int(other))
 
@@ -94,11 +99,17 @@ class VariableOpMixin(UniversalNumberOpMixin):
     def __eq__(self, other):
         return VarEqualOp(self, Const.wrap_int(other))
 
+    def __and__(self, other):
+        return BitAndOp(self, Const.wrap_int(other))
+
 
 # used by VirtualExprIndicator
 class VirtualExprOpMixin(UniversalNumberOpMixin):
     def __eq__(self, other):
         return EqualOp(self, Const.wrap_int(other))
+
+    def __and__(self, other):
+        return BitAndOp(self, Const.wrap_int(other))
 
 
 # used by compounded expressions
@@ -729,7 +740,10 @@ class HeaderContainOp(NumberOpMixin):
 class Op2VirtualMixin:
     @property
     def virtual(self):
-        return self.expr1.virtual or self.expr2.virtual
+        try:
+            return self.expr1.virtual or self.expr2.virtual
+        except AttributeError:
+            return self.slice.virtual or self.index.virtual
 
 
 class AddOp(NumberOpMixin, Op2VirtualMixin):
@@ -921,3 +935,51 @@ class VarEqualOp(NumberOpMixin):
 
     def compile4(self, context):
         return compile4_var_equal(self.var, self.expr, context)
+
+
+class RightShiftOp(NumberOpMixin, Op2VirtualMixin):
+    def __init__(self, expr1, expr2):
+        self.expr1 = expr1
+        self.expr2 = expr2
+
+    def __str__(self):
+        return f"({self.expr1}) >> ({self.expr2})"
+
+    def compile4(self, context):
+        return compile4_op2("right_shift", self.expr1, self.expr2, context)
+
+
+class BitAndOp(NumberOpMixin, Op2VirtualMixin):
+    def __init__(self, expr1, expr2):
+        self.expr1 = expr1
+        self.expr2 = expr2
+
+    def __str__(self):
+        return f"({self.expr1}) & ({self.expr2})"
+
+    def compile4(self, context):
+        return compile4_op2("bit_and", self.expr1, self.expr2, context)
+
+
+class AssignQUICUInt(ActionOpMixin):
+    def __init__(self, var, head, tail):
+        self.var = var
+        self.head = head
+        self.tail = tail
+
+    def compile5(self, context):
+        return compile5_assign_quic_uint(self, context)
+
+    def compile2(self, context):
+        pass
+
+
+class AssignSDU(ActionOpMixin):
+    def __init__(self, expr):
+        self.expr = expr
+
+    def compile5(self, context):
+        return compile5_assign_sdu(self.expr, context)
+
+    def compile2(self, context):
+        pass
