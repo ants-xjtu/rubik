@@ -7,6 +7,7 @@ content = bytearray()
 with open(argv[1]) as rules_file:
     info_list = []
     http_info_list = []
+    pcre_count = 0
     for rule in rules_file:
         info = {}
         groups = search(
@@ -37,12 +38,23 @@ with open(argv[1]) as rules_file:
             if ":" in arg:
                 key, value = tuple(arg.split(":", 1))
                 key = key.strip()
-                value = value.strip().split(",")[0]  # ignore modifiers
+
+                # below only works for value surrounded by ""
+                if value.startswith("\""):
+                    raw_value = value
+                    value = ""
+                    for value_part in raw_value[1:].split("\""):
+                        value += value_part
+                        if value_part.endswith("\\"):
+                            value += "\""
+                        else:
+                            break
+                
                 if key == "msg":
-                    info["msg"] = value[1:-1]
+                    info["msg"] = value
                 elif key == "content":
                     content = ""
-                    for i, part in enumerate(value[1:-1].split("|")):
+                    for i, part in enumerate(value.split("|")):
                         if i % 2 == 0:
                             content += part
                         else:
@@ -55,6 +67,14 @@ with open(argv[1]) as rules_file:
                     else:
                         if "content" not in info:
                             info["content"] = content
+                elif key == "pcre":
+                    regex = value[1:]
+                    info['pcre'], flags = tuple(regex.rsplit('/', 1))
+                    info['pcre_m'] = 'm' in flags
+                    info['pcre_i'] = 'i' in flags
+                    info['pcre_s'] = 's' in flags
+                    info['pcre_x'] = 'x' in flags
+                    pcre_count += 1
             else:
                 if arg.strip() == "http_uri":
                     expect_uri = True
@@ -72,5 +92,6 @@ with open(argv[1]) as rules_file:
 
 print("#raw:", len(info_list))
 print("#http:", len(http_info_list))
+print("#pcre:", pcre_count)
 with open("snort.cfg", "w") as cfg_file:
     dump({"raw": tuple(info_list), "http": tuple(http_info_list)}, cfg_file)

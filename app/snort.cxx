@@ -7,6 +7,7 @@ extern "C" {
 #include "http-parser/http_parser.h"
 #include "libac/acism.h"
 #include <libconfig.h>
+#include <pcre.h>
 #include <runtime/types.h>
 }
 
@@ -91,6 +92,41 @@ WV_U8 add_checker(Rule &rule, RuleChecker *checker) {
   return 0;
 }
 
+WV_U8 parse_options(Rule &rule, config_setting_t *settings) {
+  const char *message;
+  assert(config_setting_lookup_string(settings, "msg", &message));
+  WV_U32 message_length = strlen(message);
+  rule.message = (WV_ByteSlice){
+      .cursor = new WV_Byte[message_length],
+      .length = message_length,
+  };
+  memcpy((WV_Any)rule.message.cursor, message, message_length);
+
+  rule.checker_head = NULL;
+
+  int srcport, dstport;
+  assert(config_setting_lookup_int(settings, "srcport", &srcport));
+  assert(config_setting_lookup_int(settings, "dstport", &dstport));
+  if (srcport != 0) {
+    add_checker(rule, new CheckSrcPort(srcport));
+  }
+  if (dstport != 0) {
+    add_checker(rule, new CheckDstPort(dstport));
+  }
+  const char *uri_pattern;
+  int uri_pattern_length;
+  assert(config_setting_lookup_string(settings, "uri", &uri_pattern));
+  assert(
+      config_setting_lookup_int(settings, "uri_length", &uri_pattern_length));
+  if (uri_pattern_length != 0) {
+    char *cloned_uri = new char[uri_pattern_length + 1];
+    memcpy(cloned_uri, uri_pattern, uri_pattern_length);
+    cloned_uri[uri_pattern_length] = 0;
+    add_checker(rule, new CheckUri(cloned_uri));
+  }
+  return 0;
+}
+
 extern "C" WV_U8 WV_Setup() {
   printf("[setup] read configure\n");
   config_t config;
@@ -110,41 +146,16 @@ extern "C" WV_U8 WV_Setup() {
     assert(pattern_length != 0);
     raw_strv[i] =
         (MEMREF){.ptr = pattern, .len = static_cast<size_t>(pattern_length)};
-
-    const char *message;
-    assert(config_setting_lookup_string(rule, "msg", &message));
-    WV_U32 message_length = strlen(message);
-    raw_rules[i].message = (WV_ByteSlice){
-        .cursor = new WV_Byte[message_length],
-        .length = message_length,
-    };
-    memcpy((WV_Any)raw_rules[i].message.cursor, message, message_length);
-
-    raw_rules[i].checker_head = NULL;
-
-    int srcport, dstport;
-    assert(config_setting_lookup_int(rule, "srcport", &srcport));
-    assert(config_setting_lookup_int(rule, "dstport", &dstport));
-    if (srcport != 0) {
-      add_checker(raw_rules[i], new CheckSrcPort(srcport));
-    }
-    if (dstport != 0) {
-      add_checker(raw_rules[i], new CheckDstPort(dstport));
-    }
-    const char *uri_pattern;
-    int uri_pattern_length;
-    assert(config_setting_lookup_string(rule, "uri", &uri_pattern));
-    assert(config_setting_lookup_int(rule, "uri_length", &uri_pattern_length));
-    char *cloned_uri = new char[uri_pattern_length + 1];
-    memcpy(cloned_uri, uri_pattern, uri_pattern_length);
-    if (uri_pattern_length != 0) {
-      add_checker(raw_rules[i], new CheckUri(cloned_uri));
-    }
+    parse_options(raw_rules[i], rule);
   }
 
   config_setting_t *http_settings = config_lookup(&config, "http");
   http_count = config_setting_length(http_settings);
   assert(http_count < 2048);
+  for (WV_U32 i = 0; i < http_count; i += 1) {
+    config_setting_t *rule = config_setting_get_elem(http_settings, i);
+    parse_options(http_rules[i], rule);
+  }
 
   printf("[setup] build ac (count: %u)\n", raw_count);
   raw_ac = acism_create(raw_strv, raw_count);
@@ -192,6 +203,11 @@ int on_uri(http_parser *parser, const char *at, size_t length) {
   return 0;
 }
 
+int on_header_end(http_parser *parser) {
+  ((HTTPData *)parser->data)->user.parse_end = 1;
+  return 0;
+}
+
 typedef struct {
   WV_U16 _201;       // report_status.srcport
   WV_U16 _202;       // report_status.dstport
@@ -210,7 +226,7 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
       .uri = WV_EMPTY,
   };
 
-  // printf("state: %u len(content): %u\n", state, sdu.length);
+  // printf("state: %u len(content): %u\n", state, packet.sdu.length);
   if (packet.sdu.length == 0) {
     return 0;
   }
@@ -239,6 +255,7 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
     http_parser_settings settings;
     memset(&settings, 0, sizeof(settings));
     settings.on_url = on_uri;
+    settings.on_headers_complete = on_header_end;
     size_t nparsed = http_parser_execute(
         user_data->parser, &settings,
         reinterpret_cast<const char *>(packet.sdu.cursor), packet.sdu.length);
@@ -262,6 +279,24 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
                raw_rules[i].message.cursor);
         clear_bit(user_data->active_raw, i);
         set_bit(user_data->alerted_raw, i);
+      }
+    }
+  }
+
+  for (WV_U16 i = 0; i < http_count; i += 1) {
+    if (!has_bit(user_data->alerted_http, i)) {
+      WV_U8 pass = 1;
+      for (RuleChecker *checker = http_rules[i].checker_head; checker != NULL;
+           checker = checker->next) {
+        if (!checker->check(packet)) {
+          pass = 0;
+          break;
+        }
+      }
+      if (pass) {
+        printf("[match] %*s\n", http_rules[i].message.length,
+               http_rules[i].message.cursor);
+        set_bit(user_data->alerted_http, i);
       }
     }
   }
