@@ -7,7 +7,8 @@ extern "C" {
 #include "http-parser/http_parser.h"
 #include "libac/acism.h"
 #include <libconfig.h>
-#include <pcre.h>
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 #include <runtime/types.h>
 }
 
@@ -71,6 +72,22 @@ public:
   }
 };
 
+class MatchPCRE : public RuleChecker {
+  const pcre2_code *re;
+
+public:
+  MatchPCRE(pcre2_code *re) : re(re) {}
+  virtual WV_U8 check(Packet &packet) {
+    pcre2_match_data *match_data =
+        pcre2_match_data_create_from_pattern(re, NULL);
+    int res = pcre2_match(re, reinterpret_cast<PCRE2_SPTR>(packet.sdu.cursor),
+                          packet.sdu.length, 0, 0, match_data, NULL);
+    pcre2_match_data_free(match_data);
+    // printf("res: %d\n", res);
+    return res >= 0;
+  }
+};
+
 WV_ByteSlice clone_slice(const WV_Byte *cursor, WV_U32 length) {
   WV_ByteSlice slice = {.cursor = new WV_Byte[length], .length = length};
   memcpy((WV_Any)slice.cursor, cursor, length);
@@ -123,6 +140,33 @@ WV_U8 parse_options(Rule &rule, config_setting_t *settings) {
     memcpy(cloned_uri, uri_pattern, uri_pattern_length);
     cloned_uri[uri_pattern_length] = 0;
     add_checker(rule, new CheckUri(cloned_uri));
+  }
+
+  const char *regex;
+  if (config_setting_lookup_string(settings, "pcre", &regex)) {
+    int flags = 0, flag_m, flag_i, flag_x, flag_s;
+    assert(config_setting_lookup_bool(settings, "pcre_i", &flag_i));
+    if (flag_i) {
+      flags |= PCRE2_CASELESS;
+    }
+    assert(config_setting_lookup_bool(settings, "pcre_x", &flag_x));
+    if (flag_x) {
+      flags |= PCRE2_EXTENDED;
+    }
+    assert(config_setting_lookup_bool(settings, "pcre_m", &flag_m));
+    if (flag_m) {
+      flags |= PCRE2_MULTILINE;
+    }
+    assert(config_setting_lookup_bool(settings, "pcre_s", &flag_s));
+    if (flag_s) {
+      flags |= PCRE2_DOTALL;
+    }
+    int errnum;
+    size_t erroff;
+    pcre2_code *re =
+        pcre2_compile(reinterpret_cast<PCRE2_SPTR>(regex),
+                      PCRE2_ZERO_TERMINATED, flags, &errnum, &erroff, NULL);
+    add_checker(rule, new MatchPCRE(re));
   }
   return 0;
 }
@@ -275,8 +319,8 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
         }
       }
       if (pass) {
-        printf("[match] %*s\n", raw_rules[i].message.length,
-               raw_rules[i].message.cursor);
+        // printf("[match] %*s\n", raw_rules[i].message.length,
+        //        raw_rules[i].message.cursor);
         clear_bit(user_data->active_raw, i);
         set_bit(user_data->alerted_raw, i);
       }
@@ -294,8 +338,8 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
         }
       }
       if (pass) {
-        printf("[match] %*s\n", http_rules[i].message.length,
-               http_rules[i].message.cursor);
+        // printf("[match] %*s\n", http_rules[i].message.length,
+        //        http_rules[i].message.cursor);
         set_bit(user_data->alerted_http, i);
       }
     }

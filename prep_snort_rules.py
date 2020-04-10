@@ -41,7 +41,7 @@ with open(argv[1]) as rules_file:
 
                 # below only works for value surrounded by ""
                 if value.startswith("\""):
-                    raw_value = value
+                    raw_value = value.strip()
                     value = ""
                     for value_part in raw_value[1:].split("\""):
                         value += value_part
@@ -49,7 +49,6 @@ with open(argv[1]) as rules_file:
                             value += "\""
                         else:
                             break
-                
                 if key == "msg":
                     info["msg"] = value
                 elif key == "content":
@@ -68,6 +67,7 @@ with open(argv[1]) as rules_file:
                         if "content" not in info:
                             info["content"] = content
                 elif key == "pcre":
+                    # print(value)
                     regex = value[1:]
                     info['pcre'], flags = tuple(regex.rsplit('/', 1))
                     info['pcre_m'] = 'm' in flags

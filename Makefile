@@ -17,8 +17,8 @@ export TARGET_FLAG
 GCC = gcc
 GCC_OPT = -m64 # -Wall -DNEWEV -Werror
 
-GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
-# GCC_OPT += -O3 -DNDEBUG -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+# GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += -O3 -DNDEBUG -DNETSTAT -DINFO -DDBGERR -DDBGCERR
 GCC_OPT += $(DBG_OPT)
 
 ### LIBRARIES AND INCLUDES ###
@@ -27,7 +27,7 @@ INC= -I$(INC_DIR) -I$(INC_DIR)/runtime -I$(INC_DIR)/runtime/tommyds
 
 ### SOURCE FILES ###
 
-LIB_FLAGS += -lstdc++
+LIB_FLAGS += -lstdc++ -lpcre2-8
 ifeq ($(T), pcap)
 LIB_FLAGS += -lpcap
 endif
