@@ -17,7 +17,7 @@ extern "C" {
 #define assert(x) x
 #endif
 
-ACISM *raw_ac;
+ACISM *raw_ac, *uri_ac, *http_uri_ac;
 
 struct Packet {
   WV_ByteSlice sdu;
@@ -69,6 +69,13 @@ public:
     memcpy(buffer, packet.uri.cursor, packet.uri.length);
     buffer[packet.uri.length] = 0;
     return strstr(buffer, pattern) != NULL;
+  }
+};
+
+class HasUri : public RuleChecker {
+public:
+  virtual WV_U8 check(Packet &packet) {
+    return packet.uri.length != 0;
   }
 };
 
@@ -134,12 +141,14 @@ WV_U8 parse_options(Rule &rule, config_setting_t *settings) {
   int uri_pattern_length;
   assert(config_setting_lookup_string(settings, "uri", &uri_pattern));
   assert(
-      config_setting_lookup_int(settings, "uri_length", &uri_pattern_length));
+      config_setting_lookup_int(settings, "uri_length",
+      &uri_pattern_length));
   if (uri_pattern_length != 0) {
-    char *cloned_uri = new char[uri_pattern_length + 1];
-    memcpy(cloned_uri, uri_pattern, uri_pattern_length);
-    cloned_uri[uri_pattern_length] = 0;
-    add_checker(rule, new CheckUri(cloned_uri));
+    // char *cloned_uri = new char[uri_pattern_length + 1];
+    // memcpy(cloned_uri, uri_pattern, uri_pattern_length);
+    // cloned_uri[uri_pattern_length] = 0;
+    // add_checker(rule, new CheckUri(cloned_uri));
+    add_checker(rule, new HasUri());
   }
 
   const char *regex;
@@ -180,7 +189,7 @@ extern "C" WV_U8 WV_Setup() {
   config_setting_t *raw_settings = config_lookup(&config, "raw");
   raw_count = config_setting_length(raw_settings);
   assert(raw_count < 2048);
-  MEMREF raw_strv[2048];
+  MEMREF raw_strv[2048], raw_uri_strv[2048];
   for (WV_U32 i = 0; i < raw_count; i += 1) {
     config_setting_t *rule = config_setting_get_elem(raw_settings, i);
     const char *pattern;
@@ -191,18 +200,35 @@ extern "C" WV_U8 WV_Setup() {
     raw_strv[i] =
         (MEMREF){.ptr = pattern, .len = static_cast<size_t>(pattern_length)};
     parse_options(raw_rules[i], rule);
+
+    const char *uri;
+    int uri_length;
+    assert(config_setting_lookup_string(rule, "uri", &uri));
+    assert(config_setting_lookup_int(rule, "uri_length", &uri_length));
+    raw_uri_strv[i] =
+        (MEMREF){.ptr = uri, .len = static_cast<size_t>(uri_length)};
   }
 
   config_setting_t *http_settings = config_lookup(&config, "http");
   http_count = config_setting_length(http_settings);
   assert(http_count < 2048);
+  MEMREF http_uri_strv[2048];
   for (WV_U32 i = 0; i < http_count; i += 1) {
     config_setting_t *rule = config_setting_get_elem(http_settings, i);
     parse_options(http_rules[i], rule);
+
+    const char *uri;
+    int uri_length;
+    assert(config_setting_lookup_string(rule, "uri", &uri));
+    assert(config_setting_lookup_int(rule, "uri_length", &uri_length));
+    http_uri_strv[i] =
+        (MEMREF){.ptr = uri, .len = static_cast<size_t>(uri_length)};
   }
 
   printf("[setup] build ac (count: %u)\n", raw_count);
   raw_ac = acism_create(raw_strv, raw_count);
+  uri_ac = acism_create(raw_uri_strv, raw_count);
+  http_uri_ac = acism_create(http_uri_strv, http_count);
 
   printf("[setup] finishing\n");
   config_destroy(&config);
@@ -239,6 +265,12 @@ int on_match(int strnum, int textpos, WV_Any context) {
   if (!has_bit(user_data->alerted_raw, strnum)) {
     set_bit(user_data->active_raw, strnum);
   }
+  return 0;
+}
+
+int on_match_uri(int strnum, int textpos, WV_Any context) {
+  WV_Byte *map = static_cast<WV_Byte *>(context);
+  set_bit(map, strnum);
   return 0;
 }
 
@@ -308,39 +340,60 @@ extern "C" WV_U8 report_status(H11 *args, WV_Any *context) {
     }
   }
 
+  WV_Byte urimap[256];
+  if (packet.uri.length != 0) {
+    memset(urimap, 0, sizeof(WV_Byte) * 256);
+    MEMREF uri_text = {.ptr = reinterpret_cast<const char *>(packet.uri.cursor),
+                       .len = packet.uri.length};
+    int state = 0;
+    acism_more(uri_ac, uri_text, on_match_uri, urimap, &state);
+  }
+
   for (WV_U16 i = 0; i < raw_count; i += 1) {
     if (has_bit(user_data->active_raw, i)) {
-      WV_U8 pass = 1;
-      for (RuleChecker *checker = raw_rules[i].checker_head; checker != NULL;
-           checker = checker->next) {
-        if (!checker->check(packet)) {
-          pass = 0;
-          break;
+      if (packet.uri.length == 0 || has_bit(urimap, i)) {
+        WV_U8 pass = 1;
+        for (RuleChecker *checker = raw_rules[i].checker_head; checker != NULL;
+             checker = checker->next) {
+          if (!checker->check(packet)) {
+            pass = 0;
+            break;
+          }
         }
-      }
-      if (pass) {
-        // printf("[match] %*s\n", raw_rules[i].message.length,
-        //        raw_rules[i].message.cursor);
-        clear_bit(user_data->active_raw, i);
-        set_bit(user_data->alerted_raw, i);
+        if (pass) {
+          // printf("[match] %.*s\n", raw_rules[i].message.length,
+          //        raw_rules[i].message.cursor);
+          clear_bit(user_data->active_raw, i);
+          set_bit(user_data->alerted_raw, i);
+        }
       }
     }
   }
 
+  if (packet.uri.length != 0) {
+    memset(urimap, 0, sizeof(WV_Byte) * 256);
+    MEMREF uri_text = {.ptr = reinterpret_cast<const char *>(packet.uri.cursor),
+                       .len = packet.uri.length};
+    int state = 0;
+    acism_more(http_uri_ac, uri_text, on_match_uri, urimap, &state);
+  }
+
   for (WV_U16 i = 0; i < http_count; i += 1) {
     if (!has_bit(user_data->alerted_http, i)) {
-      WV_U8 pass = 1;
-      for (RuleChecker *checker = http_rules[i].checker_head; checker != NULL;
-           checker = checker->next) {
-        if (!checker->check(packet)) {
-          pass = 0;
-          break;
+      if (packet.uri.length == 0 || has_bit(urimap, i)) {
+        WV_U8 pass = 1;
+        for (RuleChecker *checker = http_rules[i].checker_head; checker != NULL;
+             checker = checker->next) {
+          if (!checker->check(packet)) {
+            pass = 0;
+            break;
+          }
         }
-      }
-      if (pass) {
-        // printf("[match] %*s\n", http_rules[i].message.length,
-        //        http_rules[i].message.cursor);
-        set_bit(user_data->alerted_http, i);
+        if (pass) {
+          // printf("[match] %.*s\n", http_rules[i].message.length,
+          //        http_rules[i].message.cursor);
+          set_bit(user_data->alerted_http, i);
+        }
       }
     }
   }
