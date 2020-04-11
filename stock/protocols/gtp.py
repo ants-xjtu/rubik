@@ -20,9 +20,9 @@ class var_header(layout):
 
 
 class gtp_extension_header(layout):
-    next_type = Bit(8)
     extension_length = Bit(8)
     extension_data = Bit(((extension_length << 2) - 2) << 3)
+    next_type = Bit(8)
 
 
 def gtp_parser():
