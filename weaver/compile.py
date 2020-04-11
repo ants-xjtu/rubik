@@ -319,14 +319,17 @@ class InstReg:
 # header actions
 class LocateStruct:
     def __init__(self, struct_id, struct_length, parsed_reg, ntoh_init7_list):
-        self.compile7 = "\n".join(
-            [
-                f"{compile6_struct_expr(struct_id)} = (WV_Any)current.cursor;",
-                f"current = WV_SliceAfter(current, {struct_length});",
-                f"{parsed_reg.expr6} = 1;",
-                *ntoh_init7_list,
-            ],
-        )
+        if struct_id is not None:
+            self.compile7 = "\n".join(
+                [
+                    f"{compile6_struct_expr(struct_id)} = (WV_Any)current.cursor;",
+                    f"current = WV_SliceAfter(current, {struct_length});",
+                    f"{parsed_reg.expr6} = 1;",
+                    *ntoh_init7_list,
+                ],
+            )
+        else:
+            self.compile7 = f"{parsed_reg.expr6} = 1;"
 
 
 class CoverSlice:
@@ -353,6 +356,8 @@ def compile1_layout(layout, context):
     struct_length = 0
     actions = []
     ntoh_init7_list = []
+    if layout.field_list == []:
+        actions.append(LocateStruct(None, None, parsed_reg, []))
     for name, bit in layout.field_list:
         if not isinstance(bit.length, int):
             assert pack_length == 0

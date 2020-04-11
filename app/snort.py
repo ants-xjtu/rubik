@@ -1,5 +1,5 @@
 from weaver.lang import layout, Bit, If, Assign, Call
-from stock.tcp_ip import stack
+from stock.gtp import stack
 
 
 class report_status(layout):

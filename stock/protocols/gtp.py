@@ -11,9 +11,12 @@ class gtp_hdr(layout):
     MT = Bit(8)
     Total_length = Bit(16)
     TEID = Bit(32)
-    optional = Bit(
-        (((E == 1) | (S == 1) | (PN == 1)) << 1) + ((E == 1) | (S == 1) | (PN == 1))
-    )
+
+
+class var_header(layout):
+    seq_no_upper = Bit(16)
+    npdu_no = Bit(8)
+    next_header_type = Bit(8)
 
 
 class gtp_extension_header(layout):
@@ -22,14 +25,15 @@ class gtp_extension_header(layout):
     extension_data = Bit(((extension_length << 2) - 2) << 3)
 
 
-class gtp_blank(layout):
-    next_type = Bit(8, const=0)
-
-
 def gtp_parser():
     gtp = Connectionless()
     gtp.header = gtp_hdr
-    gtp.header += If(
-        (gtp.header.E == 1) | (gtp.header.S == 1) | (gtp.header.PN == 1)
-    ) >> AnyUntil([gtp_extension_header, gtp_blank], gtp.header_contain(gtp_blank))
+    gtp.header += (
+        If((gtp.header.E == 1) | (gtp.header.S == 1) | (gtp.header.PN == 1))
+        >> var_header
+    )
+    gtp.header += If(gtp.header.E == 1) >> AnyUntil(
+        [gtp_extension_header],
+        (gtp_extension_header.next_type != 0) & (gtp.payload_len != 0),
+    )
     return gtp
