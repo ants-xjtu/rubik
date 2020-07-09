@@ -79,4 +79,4 @@ endif
 
 gen:
 	# https://stackoverflow.com/a/7104422
-	python3.7 -m weaver $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+	python3.8 -m weaver $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
