@@ -132,3 +132,4 @@ dmypy.json
 pcap/
 weaver_whitebox.c
 *.cfg
+stack.py
