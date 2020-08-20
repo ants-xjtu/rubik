@@ -61,4 +61,4 @@ WV_U8 print_ethernet_type(H1 *args, WV_Any *user_data) {
 }
 ```
 
-Detail about C API of Rubik will be introduced later. For now we could just read `args->_106` for type value hinted by comment. Copy the template to `weaver_whitebox.c`, add necessary headers and call `printf` in the callback, then it's time to run `make` for the final build.
+Details about C API of Rubik will be introduced later. For now we could just read `args->_106` for type value hinted by comment. Copy the template to `weaver_whitebox.c`, add necessary headers and call `printf` in the callback, then it's time to run `make` for the final build.
