@@ -13,6 +13,8 @@
  * queue per port as determined by the proc-id parameter.
  */
 
+#ifdef WV_TARGET_DPDK
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -665,3 +667,4 @@ main(int argc, char **argv)
   return 0;
 }
 
+#endif
