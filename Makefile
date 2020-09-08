@@ -72,6 +72,7 @@ clean:
 	-$(RM) procpkts $(wb) $(bb)
 	-$(RM) -rf build/
 	-$(RM) native/weaver.h.gch
+	-$(RM) test_seq
 	$(MAKE) -C native/runtime clean
 
 .PHONY: all clean weaver_blackbox.c native/runtime/libwvrt.a

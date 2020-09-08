@@ -1,4 +1,5 @@
 {
     "python.pythonPath": "./env/bin/python3.7",
-    "python.formatting.provider": "black"
+    "python.formatting.provider": "black",
+    "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: LLVM, ContinuationIndentWidth: 2, AlignAfterOpenBracket: AlwaysBreak, BinPackArguments: false }"
 }
