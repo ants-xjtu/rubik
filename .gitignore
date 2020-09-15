@@ -134,3 +134,4 @@ weaver_whitebox.c
 *.cfg
 stack.py
 *_test
+*.snapshot

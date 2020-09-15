@@ -1,4 +1,5 @@
 from weaver.util import indent_join, make_block, code_comment
+from mako.template import Template
 
 
 def compile7_branch(branch):
@@ -87,6 +88,18 @@ def compile7_stack(stack, block_map, inst_decls, entry_id):
         + f"__attribute__((packed)) H{struct};"
         for struct, regs in stack.struct_map.items()
     )
+
+    struct7 = Template(
+        r"""
+% for struct, regs in stack.struct_map.items():
+typedef struct {
+% for reg in regs:
+  ${decl_header_reg(stack.reg_map[reg])}
+% endfor
+}__attribute__((packed)) H${struct};
+% endfor
+"""
+    ).render(stack=stack, decl_header_reg=decl_header_reg)
 
     extern_call7 = "\n".join(
         f"WV_U8 {call.layout.debug_name}(H{struct_id} *, WV_Any *);"
