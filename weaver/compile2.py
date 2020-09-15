@@ -68,91 +68,79 @@ def decl_header_reg(reg):
 
 
 def compile7_stack(stack, block_map, inst_decls, entry_id):
-    layer_count = len(block_map)
-
-    prefix7 = "\n".join(
-        [
-            "#include <weaver.h>",
-            "#include <tommyds/tommyhashdyn.h>",
-            "#if TOMMY_SIZE_BIT == 64",
-            "#define hash(k, s) tommy_hash_u64(0, k, s)",
-            "#else",
-            "#define hash(k, s) tommy_hash_u32(0, k, s)",
-            "#endif",
-        ]
-    )
-
-    struct7 = "\n".join(
-        "typedef struct "
-        + indent_join(decl_header_reg(stack.reg_map[reg]) for reg in regs)
-        + f"__attribute__((packed)) H{struct};"
-        for struct, regs in stack.struct_map.items()
-    )
-
     struct7 = Template(
         r"""
+## prefix7
+#include <weaver.h>
+#include <tommyds/tommyhashdyn.h>
+#if TOMMY_SIZE_BIT == 64
+#define hash(k, s) tommy_hash_u64(0, k, s)
+#else
+#define hash(k, s) tommy_hash_u32(0, k, s)
+#endif
+## struct7
 % for struct, regs in stack.struct_map.items():
 typedef struct {
-% for reg in regs:
+  % for reg in regs:
   ${decl_header_reg(stack.reg_map[reg])}
-% endfor
+  % endfor
 }__attribute__((packed)) H${struct};
 % endfor
+## extern_call7
+% for call, struct_id in stack.call_struct.items():
+WV_U8 ${call.layout.debug_name}(H${struct_id} *, WV_Any *);
+% endfor
+## inst_struct7
+% for inst_decl in inst_decls.values():
+${inst_decl.compile7}
+% endfor
+## eq_func7
+% for i in range(layer_count):
+% if i in inst_decls:
+int l${i}_eq(const void *key, const void *object) {
+  return memcmp(key, object, sizeof(${compile6_key_type(i)}));
+}
+% endif
+% endfor
+## runtime7
+struct _WV_Runtime {
+  WV_Profile profile;
+  % for i in range(layer_count):
+  % if i in inst_decls:
+  ${compile6_inst_type(i)} *l${i}_p;
+  tommy_hashdyn t${i};
+  % endif
+  % endfor
+};
+WV_Runtime *WV_AllocRuntime() {
+  WV_Runtime *rt = WV_Malloc(sizeof(WV_Runtime));
+  % for i in range(layer_count):
+  % if i in inst_decls:
+  tommy_hashdyn_init(&rt->t${i});
+  rt->l${i}_p = WV_Malloc(sizeof(${compile6_inst_type(i)}));
+  memset(rt->l${i}_p, 0, sizeof(${compile6_inst_type(i)}));
+  % endif
+  % endfor
+  return rt;
+}
+WV_U8 WV_FreeRuntime(WV_Runtime *rt) {
+  // todo
+  return 0;
+}
+WV_Profile *WV_GetProfile(WV_Runtime *rt) {
+  return &rt->profile;
+}
 """
-    ).render(stack=stack, decl_header_reg=decl_header_reg)
-
-    extern_call7 = "\n".join(
-        f"WV_U8 {call.layout.debug_name}(H{struct_id} *, WV_Any *);"
-        for call, struct_id in stack.call_struct.items()
+    ).render(
+        stack=stack,
+        inst_decls=inst_decls,
+        layer_count=len(block_map),
+        compile6_key_type=compile6_key_type,
+        compile6_inst_type=compile6_inst_type,
+        decl_header_reg=decl_header_reg,
     )
 
-    inst_structs7 = "\n".join(inst_decl.compile7 for inst_decl in inst_decls.values())
-
-    eq_func7 = "\n".join(
-        f"int l{i}_eq(const void *key, const void *object) "
-        + make_block(f"return memcmp(key, object, sizeof({compile6_key_type(i)}));")
-        for i in range(layer_count)
-        if i in inst_decls
-    )
-
-    runtime7 = "\n".join(
-        [
-            "struct _WV_Runtime "
-            + indent_join(
-                [
-                    "WV_Profile profile;",
-                    *[
-                        f"{compile6_inst_type(i)} *l{i}_p;\n" + f"tommy_hashdyn t{i};"
-                        for i in range(layer_count)
-                        if i in inst_decls
-                    ],
-                ]
-            )
-            + ";",
-            "WV_Runtime *WV_AllocRuntime() "
-            + indent_join(
-                [
-                    "WV_Runtime *rt = WV_Malloc(sizeof(WV_Runtime));",
-                    *[
-                        "\n".join(
-                            [
-                                f"tommy_hashdyn_init(&rt->t{i});",
-                                f"rt->l{i}_p = WV_Malloc(sizeof({compile6_inst_type(i)}));",
-                                f"memset(rt->l{i}_p, 0, sizeof({compile6_inst_type(i)}));",
-                            ]
-                        )
-                        for i in range(layer_count)
-                        if i in inst_decls
-                    ],
-                    "return rt;",
-                ]
-            ),
-            "WV_U8 WV_FreeRuntime(WV_Runtime *rt) " + make_block("// todo\nreturn 0;"),
-            "WV_Profile *WV_GetProfile(WV_Runtime *rt) "
-            + make_block("return &rt->profile;"),
-        ]
-    )
-
+    layer_count = len(block_map)
     raw_blocks7 = {
         block.block_id: compile7_block(block, block is entry, layer_id)
         for layer_id, entry in block_map.items()
@@ -231,9 +219,7 @@ typedef struct {
         )
     )
 
-    return "\n".join(
-        [prefix7, struct7, extern_call7, inst_structs7, eq_func7, runtime7, process7]
-    )
+    return "\n".join([struct7, process7])
 
 
 def compile7w_stack(stack):
