@@ -223,8 +223,11 @@ WV_Profile *WV_GetProfile(WV_Runtime *rt) {
 
 
 def compile7w_stack(stack):
-    setup7 = "WV_U8 WV_Setup() " + make_block("return 0;")
-
+    default7 = r"""
+WV_U8 WV_Setup() {
+  return 0;
+}    
+"""
     extern_call7 = "\n".join(
         "typedef struct "
         + indent_join(
@@ -235,7 +238,7 @@ def compile7w_stack(stack):
         + make_block("return 0;")
         for call, struct_id in stack.call_struct.items()
     )
-    return "\n".join(["#include <weaver.h>", setup7, extern_call7])
+    return "\n".join(["#include <weaver.h>", default7, extern_call7])
 
 
 def compile6_inst_type(layer_id):

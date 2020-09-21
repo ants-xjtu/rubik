@@ -15,14 +15,27 @@ typedef struct {
     WV_U32 right;
 } WV_SeqMeta;
 
-typedef struct {
+struct WV_Seq;
+
+// universal signature for event handlers
+// payload is NULL if not applicable, for example not using data
+typedef WV_U8 (*WV_SeqEventHandler)(struct WV_Seq *seq, WV_ByteSlice payload);
+
+static WV_U8 default_handler(struct WV_Seq *_seq, WV_ByteSlice _payload) {
+    return 0;
+}
+
+struct WV_Seq {
     WV_Byte* buffer;
     WV_U32 offset;
     WV_U8 set_offset;
     WV_SeqMeta nodes[WV_CONFIG_SeqNodeCount], postfix;
     WV_U8 used_count;
     WV_U8 pre_done, post_start;
-} WV_Seq;
+    WV_SeqEventHandler on_buffer_exceed, on_overlap, on_retex, on_out_of_window;
+};
+
+typedef struct WV_Seq WV_Seq;
 
 static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
 {
@@ -36,6 +49,7 @@ static inline WV_U8 WV_InitSeq(WV_Seq* seq, WV_U8 use_data, WV_U32 zero_base)
     seq->used_count = 0;
     seq->postfix = (WV_SeqMeta){ .left = 0, .right = 0 };
     seq->pre_done = seq->post_start = 0;
+    seq->on_buffer_exceed = seq->on_overlap = seq->on_retex = seq->on_out_of_window = default_handler;
     return 0;
 }
 
@@ -145,6 +159,7 @@ static inline WV_U8 WV_Insert(
         }
         if (seq->offset < left) {
             // left expected data out of window
+            seq->on_out_of_window(seq, use_data ? ((WV_ByteSlice){ .cursor = seq->buffer, .length = left - seq->offset}) : WV_EMPTY);
             if (use_data) {
                 for (WV_U8 i = 0; i < seq->used_count; i += 1) {
                     assert(seq->nodes[i].left >= left);
@@ -161,16 +176,20 @@ static inline WV_U8 WV_Insert(
 
         if (offset >= right || offset + takeup_length < left) {
             // full out of window
+            seq->on_retex(seq, data);
             takeup_length = data.length = 0;
         } else {
             if (offset < left) {
                 // left out of window
+                seq->on_overlap(seq, WV_SliceBefore(data, left - offset));
                 takeup_length -= left - offset;
                 data = WV_SliceAfter(data, left - offset);
                 offset = left;
             }
             if (offset + takeup_length > right) {
                 // right out of window
+                // this is safe even data.length < takeup_length
+                seq->on_out_of_window(seq, WV_SliceAfter(data, offset + takeup_length - right));
                 takeup_length = right - offset;
                 if (offset + data.length > right) {
                     data = WV_SliceBefore(data, right - offset);
@@ -189,9 +208,11 @@ static inline WV_U8 WV_Insert(
     if (takeup_length != 0) {
         if (offset < seq->offset) {
             // hard out of order
+            seq->on_retex(seq, data);
             data = WV_EMPTY;
         } else if (seq->post_start && offset + data.length > seq->postfix.left) {
             // hard out of window
+            seq->on_out_of_window(seq, data);
             data = WV_EMPTY;
         } else if (data.length != 0) {
             // assert(offset >= seq->offset);
@@ -199,7 +220,12 @@ static inline WV_U8 WV_Insert(
                 // possible overlap/retrx
                 assert(offset >= seq->nodes[pos - 1].left);
                 if (offset + data.length > seq->nodes[pos - 1].right) {
+                    if (offset < seq->nodes[pos - 1].right) {
+                        seq->on_overlap(seq, WV_SliceBefore(data, seq->nodes[pos - 1].right - offset));
+                    }
                     seq->nodes[pos - 1].right = offset + data.length;
+                } else {
+                    seq->on_retex(seq, data);
                 }
                 pos = pos - 1;
             } else {
@@ -210,7 +236,14 @@ static inline WV_U8 WV_Insert(
             while (pos + 1 < seq->used_count && seq->nodes[pos].right >= seq->nodes[pos + 1].left) {
                 // possible overlap/retrx
                 if (seq->nodes[pos].right < seq->nodes[pos + 1].right) {
+                    if (seq->nodes[pos].right > seq->nodes[pos + 1].left) {
+                        seq->on_overlap(seq, WV_SliceBefore(
+                            WV_SliceAfter(data, seq->nodes[pos + 1].left - offset), seq->nodes[pos].right - seq->nodes[pos + 1].left));
+                    }
                     seq->nodes[pos].right = seq->nodes[pos + 1].right;
+                } else {
+                    seq->on_retex(seq, WV_SliceBefore(
+                            WV_SliceAfter(data, seq->nodes[pos + 1].left - offset), seq->nodes[pos + 1].right - seq->nodes[pos + 1].left));
                 }
                 _RemoveNode(seq, pos + 1);
             }
@@ -230,6 +263,7 @@ static inline WV_U8 WV_Insert(
                     seq->postfix.right = offset + takeup_length;
                 } else {
                     // postfix out of window
+                    seq->on_out_of_window(seq, data);
                 }
             } else if (!seq->pre_done) {
                 // assert(offset == seq->offset);
@@ -237,6 +271,7 @@ static inline WV_U8 WV_Insert(
                     seq->offset = offset + takeup_length;
                 } else {
                     // prefix out of window
+                    seq->on_out_of_window(seq, data);
                 }
             } else {
                 if (seq->used_count == 0 || offset >= seq->nodes[seq->used_count - 1].right) {
@@ -245,11 +280,13 @@ static inline WV_U8 WV_Insert(
                     seq->postfix = (WV_SeqMeta){ .left = offset, .right = offset + takeup_length };
                 } else {
                     // postfix out of window, ignore
+                    seq->on_out_of_window(seq, data);
                 }
             }
         }
     }
     if (seq->used_count > 0 && seq->nodes[seq->used_count - 1].right - seq->offset > WV_CONFIG_SeqBufferSize) {
+        seq->on_buffer_exceed(seq, data);
         if (seq->nodes[seq->used_count - 1].left - seq->offset < WV_CONFIG_SeqBufferSize) {
             // right out of memory
             seq->nodes[seq->used_count - 1].right = seq->offset + WV_CONFIG_SeqBufferSize;
