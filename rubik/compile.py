@@ -1113,7 +1113,7 @@ class FetchInst:
         self.compile7 = code_comment(
             f"{context.inst_expr6} = (WV_Any){context.prefetch_expr6};",
             "fetch instance",
-        )
+        ) + f"\nTIMER_FETCH(runtime, {context.inst_type6}, {context.inst_expr6});"
 
 
 class PrefetchInst:
@@ -1148,6 +1148,7 @@ class CreateInst:
                     f"WV_InitSeq(&{context.inst_expr6}->seq, {int(context.buffer_data)}, {int(context.seq.zero_based)});"
                     if context.seq is not None
                     else "// no seq",
+                    f"TIMER_INSERT(runtime, {context.inst_type6}, {context.inst_expr6});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]
@@ -1221,7 +1222,7 @@ class FetchBiInst:
             f"(WV_Any)(((WV_Byte *){context.prefetch_expr6}) - sizeof({context.prefetch_type6})) : "
             f"(WV_Any){context.prefetch_expr6};",
             "fetch bidirectional instance",
-        )
+        ) + f"\nTIMER_FETCH(runtime, {context.inst_type6}, {context.inst_expr6});"
 
 
 class CreateBiInst:
@@ -1252,6 +1253,7 @@ class CreateBiInst:
                         if context.seq is not None
                         else ["// no seq"]
                     ),
+                    f"TIMER_INSERT(runtime, {context.inst_type6}, {context.inst_expr6});",
                     f"{context.prealloc_expr6} = WV_Malloc(sizeof({context.inst_type6}));",
                     f"memset({context.prealloc_expr6}, 0, sizeof({context.inst_type6}));",
                 ]

@@ -19,11 +19,12 @@ inst_decls = {
     if layer.layer.context.inst is not None
 }
 
-print("/* rubik Whitebox Code Template */")
+print("/* Weaver Whitebox Code Template */")
 print(compile7w_stack(stack.context))
-print("/* rubik Auto-generated Blackbox Code */")
+print("/* Weaver Auto-generated Blackbox Code */")
 print(
     compile7_stack(
         stack.context, block_map, inst_decls, stack.entry.layer.context.layer_id,
+        {layer.layer.context.layer_id: layer.layer.context for layer in stack.name_map.values()}
     )
 )

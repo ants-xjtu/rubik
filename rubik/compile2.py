@@ -67,7 +67,7 @@ def decl_header_reg(reg):
     return f"{prefix} _{reg.reg_id}{postfix};  // {reg.debug_name}"
 
 
-def compile7_stack(stack, block_map, inst_decls, entry_id):
+def compile7_stack(stack, block_map, inst_decls, entry_id, layer_context_map):
     struct7 = Template(
         r"""
 ## prefix7
@@ -105,20 +105,24 @@ int l${i}_eq(const void *key, const void *object) {
 ## runtime7
 struct _WV_Runtime {
   WV_Profile profile;
+  WV_U64 packet_count;
   % for i in range(layer_count):
   % if i in inst_decls:
   ${compile6_inst_type(i)} *l${i}_p;
   tommy_hashdyn t${i};
+  TIMER_FIELDS(${compile6_inst_type(i)})
   % endif
   % endfor
 };
 WV_Runtime *WV_AllocRuntime() {
   WV_Runtime *rt = WV_Malloc(sizeof(WV_Runtime));
+  rt->packet_count = 0;
   % for i in range(layer_count):
   % if i in inst_decls:
   tommy_hashdyn_init(&rt->t${i});
   rt->l${i}_p = WV_Malloc(sizeof(${compile6_inst_type(i)}));
   memset(rt->l${i}_p, 0, sizeof(${compile6_inst_type(i)}));
+  TIMER_INIT(rt, ${compile6_inst_type(i)});
   % endif
   % endfor
   return rt;
@@ -130,6 +134,26 @@ WV_U8 WV_FreeRuntime(WV_Runtime *rt) {
 WV_Profile *WV_GetProfile(WV_Runtime *rt) {
   return &rt->profile;
 }
+WV_U8 TimerCleanup(WV_Runtime *rt) {
+  WV_Runtime *runtime = rt;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  WV_U64 now = tv.tv_sec;
+  % for i in range(layer_count):
+  % if i in inst_decls:
+  <% last_ptr = f'rt->{compile6_inst_type(i)}_timer_last' %>
+  while (${last_ptr} != NULL && ${last_ptr}->last_update + TIMEOUT < now) {
+    ${compile6_inst_type(i)} *${layer_context_map[i].inst_expr6} = ${last_ptr};
+    ${layer_context_map[i].inst.destroy(layer_context_map[i]).compile7}
+    ${last_ptr} = ${last_ptr}->prev;
+  }
+  if (${last_ptr} == NULL) {
+    rt->${compile6_inst_type(i)}_timer_head = NULL;
+  }
+  % endif
+  % endfor
+  return 0;
+}
 """
     ).render(
         stack=stack,
@@ -138,6 +162,7 @@ WV_Profile *WV_GetProfile(WV_Runtime *rt) {
         compile6_key_type=compile6_key_type,
         compile6_inst_type=compile6_inst_type,
         decl_header_reg=decl_header_reg,
+        layer_context_map=layer_context_map
     )
 
     layer_count = len(block_map)
@@ -155,6 +180,12 @@ WV_Profile *WV_GetProfile(WV_Runtime *rt) {
         "WV_U8 WV_ProcessPacket(WV_ByteSlice packet, WV_Runtime *runtime) "
         + indent_join(
             [
+                *[
+                    'if (runtime->packet_count++ == 1000000) ' + make_block(
+                        'runtime->packet_count = 0;\n'
+                        'TimerCleanup(runtime);'
+                    )
+                ],
                 *[
                     f"H{struct} *{compile6_struct_expr(struct)};"
                     for struct in stack.struct_map
@@ -284,13 +315,14 @@ def compile7_decl_inst(inst, context):
             decl_header_reg(context.stack.reg_map[reg]) for reg in inst.key_regs
         )
         + f" {compile6_key_type(context.layer_id)};\n"
-        + "typedef struct "
+        + f"typedef struct {compile6_inst_type(context.layer_id)} "
         + indent_join(
             [
                 f"{compile6_key_type(context.layer_id)} k;",
                 "tommy_node node;",
                 "WV_Seq seq;",
                 "WV_Any user_data;",
+                f"TIMER_INJECT_FIELDS({compile6_inst_type(context.layer_id)})",
                 *[decl_reg(context.stack.reg_map[reg]) for reg in inst.inst_regs],
             ]
         )
@@ -312,7 +344,7 @@ def compile7_decl_bi_inst(bi_inst, context):
             for reg in bi_inst.key_regs2 + bi_inst.key_regs1 + bi_inst.dual_regs
         )
         + f" {compile6_rev_key_type(context.layer_id)};\n"
-        + "typedef struct "
+        + f"typedef struct {compile6_inst_type(context.layer_id)} "
         + indent_join(
             [
                 f"{compile6_key_type(context.layer_id)} k;",
@@ -325,6 +357,7 @@ def compile7_decl_bi_inst(bi_inst, context):
                 "tommy_node node_rev;",
                 "WV_Seq seq_rev;",
                 "WV_Any user_data_rev;",
+                f"TIMER_INJECT_FIELDS({compile6_inst_type(context.layer_id)})",
                 *[decl_reg(context.stack.reg_map[reg]) for reg in bi_inst.inst_regs],
             ]
         )

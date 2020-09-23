@@ -6,6 +6,7 @@
 #include "runtime/profile.h"
 #include "runtime/seq.h"
 #include "runtime/types.h"
+#include "runtime/timer.h"
 #include <stdlib.h>
 #include <string.h>
 

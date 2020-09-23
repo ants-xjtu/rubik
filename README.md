@@ -1,9 +1,9 @@
 ## Proof-of-concept and evaluation prototype for NSDI'21: *Programming Network Stack for Middleboxes with Rubik*
 
-Step 0, make sure `python3` installed with version >= 3.7; C toolchain (e.g. `build-essential` on Ubuntu) installed; `libpcap-dev` is required for `pcap` target and DKDP SDK is required for `dkdp` target. And moka package is installed:
+Step 0, make sure `python3` installed with version >= 3.7; C toolchain (e.g. `build-essential` on Ubuntu) installed; `libpcap-dev` is required for `pcap` target and DKDP SDK is required for `dkdp` target. And mako package is installed:
 
 ```
-pip3 install moka
+pip3 install mako
 ```
 
 Step 1, generate `weaver_blackbox.c` according to configure
