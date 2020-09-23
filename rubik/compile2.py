@@ -1,4 +1,4 @@
-from weaver.util import indent_join, make_block, code_comment
+from rubik.util import indent_join, make_block, code_comment
 from mako.template import Template
 
 

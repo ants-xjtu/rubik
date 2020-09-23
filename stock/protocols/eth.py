@@ -1,4 +1,4 @@
-from weaver.lang import layout, Bit, Connectionless
+from rubik.lang import layout, Bit, Connectionless
 
 
 class ethernet_hdr(layout):

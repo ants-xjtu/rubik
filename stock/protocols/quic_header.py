@@ -1,5 +1,5 @@
 # pylint: disable = unused-wildcard-import
-from weaver.lang import *
+from rubik.lang import *
 
 
 def quic_header_protocol_parser(stack):

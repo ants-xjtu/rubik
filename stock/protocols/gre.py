@@ -1,5 +1,5 @@
 # pylint: disable = unused-wildcard-import
-from weaver.lang import *
+from rubik.lang import *
 
 
 class GRE_header(layout):

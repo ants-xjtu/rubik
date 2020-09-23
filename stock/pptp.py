@@ -1,5 +1,5 @@
 # pylint: disable = unused-wildcard-import
-from weaver.lang import *
+from rubik.lang import *
 
 from stock.protocols.eth import eth_parser
 from stock.protocols.tcp import tcp_parser

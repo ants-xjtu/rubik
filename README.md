@@ -19,26 +19,20 @@ Step 2, compile the blackbox along with custom code
 ```
 # auto-generated blank template
 make A=weaver_whitebox.template.c
+# generally it's recommend to edit the copy of the template
+cp weaver_whitebox.template.c weaver_whitebox.c
+# and build it with custom code
 # DPDK target
-make A=... T=dpdk
+make T=dpdk
 ```
 
 Finally, run built executable `procpkts`.
 
 ----
 
-Non-exhuasted willing list
-* properly-designed prototype-provided and stack-defined event system
-* fully-implemented "strict mode & loose mode"
-* ~~non-sequence instance~~
-* insert-assemble-(no next & callback) optimization pattern
-* foreign UInt may cause bug
-* built-in events:
-    * `psm.fail`
-    * `seq.retrex`
-    * `seq.overlap`
-    * `seq.outofwindow`
-    * `seq.outofbuffer`
-* `stack.foo.layer.context.buffer_data` -> `stack.foo.buffer_data`
-* else branch for header parsing
-* timer
+Rubik is a perfect tool for:
+* building software middlebox for network stacks, e.g. TCP/IP, GTP, QUIC
+* validating the functionality of newly-designed protocols
+* modeling network protocols/stacks with a comprehensive abstraction
+
+To learn more, please head on to [a tour of Rubik][./doc/00-a-tour-of-rubik.markdown] and enjoy hacking!

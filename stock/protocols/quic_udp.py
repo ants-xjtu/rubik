@@ -1,4 +1,4 @@
-from weaver.lang import layout, Bit, Connectionless, Const, PSMState, PSM, Predicate
+from rubik.lang import layout, Bit, Connectionless, Const, PSMState, PSM, Predicate
 
 class udp_hdr(layout):
     src_port = Bit(16)

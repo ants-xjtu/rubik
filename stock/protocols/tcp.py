@@ -1,4 +1,4 @@
-from weaver.lang import (
+from rubik.lang import (
     layout,
     Bit,
     UInt,

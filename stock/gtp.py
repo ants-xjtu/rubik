@@ -1,4 +1,4 @@
-from weaver.lang import Stack, Predicate
+from rubik.lang import Stack, Predicate
 from stock.protocols import eth_parser, ip_parser, udp_parser, gtp_parser, tcp_parser
 
 

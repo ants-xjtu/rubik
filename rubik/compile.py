@@ -8,14 +8,14 @@ compile2: allocate temp and perm variables in context, and set context attribute
 compile3: generate instance helper struct
   signature: (Prototype, LayerContext) -> Inst/BiInst (which impl compile5)
 compile4: generate content for expressions
-  signature: (LayerContext) -> weaver.prog.Expr (which impl eval1 and compile6)
+  signature: (LayerContext) -> rubik.prog.Expr (which impl eval1 and compile6)
 compile5: generate content for statements
-  signature: (LayerContext) -> weaver.prog.UpdateReg/Branch (which impl eval2 and compile7)
+  signature: (LayerContext) -> rubik.prog.UpdateReg/Branch (which impl eval2 and compile7)
 NOTICE: compile6 is generated in compile4 stage, so as compile7 in compile5
 NOTICE: compile7 of Branch is statically generated and there's no interface to customize it
 eval1: (try to) evaluate expression
-  signature: (EvalContext) -> <python object represents value> throws weaver.prog.NotConstant
-eval2: (try to) evaluate statement, statically implemented in weaver.prog
+  signature: (EvalContext) -> <python object represents value> throws rubik.prog.NotConstant
+eval2: (try to) evaluate statement, statically implemented in rubik.prog
   signature: (EvalContext) -> None
 eval3: assert an expression to be true, and modify context according to it
   signature: (EvalContext) -> None
@@ -25,20 +25,20 @@ CAUTION: this signature has been proved to be a bad design, because when a singl
 accidentially taken place of the expected tuple, nothing but weird result is caused
 compile7: generated C code for statement, without postfix '\n'
   signature: str, recommend to '// <debug info> \n<C code>', 
-    or weaver.util.code_comment(<C code>, <debug info>)
+    or rubik.util.code_comment(<C code>, <debug info>)
 NOTICE: compile1-5 also modify LayerContext to archieve non-local code generation, such as
 external function declaration
-NOTICE: weaver.compile generates code fragments, while weaver.compile2 build the unify code
+NOTICE: rubik.compile generates code fragments, while rubik.compile2 build the unify code
 file from all fragments, thus contains global setup code that not belongs to any single
 compilable entity
-NOTICE: compile7_branch and compile7_block lives in weaver.compile2 module to prevent circle dep
+NOTICE: compile7_branch and compile7_block lives in rubik.compile2 module to prevent circle dep
 NOTICE: compile3a_prototype and compile5a_layer are two special functions that work on layer level
 they complete stage 3 and 5 respectively for whole layer, and their signatures are a little
 different to other functions in compile3 and compile5 families
 """
 
-from weaver.prog import Expr, UpdateReg, Branch, NotConstant, Block
-from weaver.compile2 import (
+from rubik.prog import Expr, UpdateReg, Branch, NotConstant, Block
+from rubik.compile2 import (
     compile6_inst_type,
     compile6_prefetch_type,
     compile6_content,
@@ -49,7 +49,7 @@ from weaver.compile2 import (
     compile7_decl_inst,
     compile7_decl_bi_inst,
 )
-from weaver.util import code_comment, comment_only, indent_join
+from rubik.util import code_comment, comment_only, indent_join
 
 
 class StackContext:
@@ -60,7 +60,7 @@ class StackContext:
         self.struct_count = 0
         self.reg_map = {}  # reg(aka int) -> HeaderReg/TempReg/InstReg
         self.struct_map = {}  # struct(aka int) -> [reg(aka int)]
-        self.call_struct = {}  # weaver.lang.Call -> struct ID (aka int)
+        self.call_struct = {}  # rubik.lang.Call -> struct ID (aka int)
 
 
 class LayerContext:
@@ -73,9 +73,9 @@ class LayerContext:
         self.seq = None
         self.perm_regs = []
         self.buffer_data = True
-        self.layout_map = {}  # weaver.lang.layout -> reg(aka int)
+        self.layout_map = {}  # rubik.lang.layout -> reg(aka int)
         self.vexpr_map = {}  # id(<someone impl compile4>(aka expr)) -> reg(aka int)
-        self.event_map = {}  # weaver.lang.Event -> var(aka Bit/AutoVar/InstVar)
+        self.event_map = {}  # rubik.lang.Event -> var(aka Bit/AutoVar/InstVar)
         self.ntoh_map = {}  # UInt.var_id -> AutoVar
 
     def alloc_header_reg(self, bit, name):
@@ -202,8 +202,8 @@ class LayerContext:
 # while there are still amount of variables are automatically generated
 # such as "header parsed"/"event triggered" automatic variables and
 # "current state" instance variables
-# thus there are two variable-declaring interfaces coexist: weaver.lang.Bit/UInt
-# for user and weaver.compile.AutoVar/InstVar for system
+# thus there are two variable-declaring interfaces coexist: rubik.lang.Bit/UInt
+# for user and rubik.compile.AutoVar/InstVar for system
 # notice there is no way to auto-generate header variables currently
 class AutoVar:
     def __init__(self, byte_length, length_expr=None, var_id=None):
@@ -260,15 +260,15 @@ class Eval1Var:
             raise NotConstant()
 
 
-# ConstExpr is duplicated with weaver.lang.Const
+# ConstExpr is duplicated with rubik.lang.Const
 # Const is for interface and used directly by user
 # ConstExpr is for compilation and used internally by compiler
-# weaver.lang should not import ConstExpr because ConstExpr is "pure" and is defined without
+# rubik.lang should not import ConstExpr because ConstExpr is "pure" and is defined without
 # necessary DSL features such as NumberOpMixin
-# weaver.compile also should not import Const because it is a one-way import design
+# rubik.compile also should not import Const because it is a one-way import design
 # is there any better solution?
 # p.s. the comment above is elder than AutoVar/InstVar
-# p.s. some compile0_XX methods defined in weaver.lang are also related to this problem
+# p.s. some compile0_XX methods defined in rubik.lang are also related to this problem
 class ConstExpr:
     def __init__(self, value):
         self.value = value
@@ -1479,8 +1479,8 @@ def compile5a_layer(layer):
     # 0. context.event_map should store reg(aka int) as values, compile2_event_group should be
     #    implemented accordingly
     # 1. implement compile4_event_var function, which accesses context.event_map and generate
-    #    weaver.prog.Expr with corresponding register like compile2_var
-    # 2. create EventVar interface in weaver.lang and implement compile4 with above function
+    #    rubik.prog.Expr with corresponding register like compile2_var
+    # 2. create EventVar interface in rubik.lang and implement compile4 with above function
     # 3. implement compile0 method of EventGroup, which generate Action including `EventVar`s
     # do so if necessary
     event_var_map = {

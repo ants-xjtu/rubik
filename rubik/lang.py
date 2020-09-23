@@ -1,9 +1,9 @@
 # interface definition
-# all implementation for compilation lives in weaver.compile
-# NOTICE: only import when duck type is needed, if not, use functions in weaver.compile directly
+# all implementation for compilation lives in rubik.compile
+# NOTICE: only import when duck type is needed, if not, use functions in rubik.compile directly
 # as interface
-from weaver.util import indent_join
-from weaver.compile import (
+from rubik.util import indent_join
+from rubik.compile import (
     StackContext,
     compile1_layout,
     compile1_header_action,
@@ -334,7 +334,7 @@ class Bit(VariableOpMixin):
         self.const = const
 
         # var_id takes place because Bit objects (or equivalent) have to be keys of
-        # weaver.compile.LayerContext.var_map
+        # rubik.compile.LayerContext.var_map
         # but Bit.__eq__ is overwritten by UniversalNumberOpMixin (but __hash__ is not)
         # so it cannot be used as key
         # var_id could be any object, as long as uniqueness is guaranteed

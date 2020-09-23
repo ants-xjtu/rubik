@@ -1,4 +1,4 @@
-from weaver.lang import layout, Bit, Connectionless, If, AnyUntil
+from rubik.lang import layout, Bit, Connectionless, If, AnyUntil
 
 
 class gtp_hdr(layout):

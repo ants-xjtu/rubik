@@ -80,7 +80,7 @@ endif
 
 gen:
 	# https://stackoverflow.com/a/7104422
-	python3 -m weaver $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+	python3 -m rubik $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
 
 test: test_seq
 	./test_seq

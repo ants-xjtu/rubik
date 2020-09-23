@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # pylint: disable = unused-wildcard-import
 from typing import *
-from weaver.compile2 import compile7_branch
+from rubik.compile2 import compile7_branch
 
 
 class Expr:

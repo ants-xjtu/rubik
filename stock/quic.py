@@ -1,5 +1,5 @@
 # pylint: disable = unused-wildcard-import
-from weaver.lang import *
+from rubik.lang import *
 
 from stock.protocols.loopback import loopback_parser
 from stock.protocols.quic_udp import udp_parser
