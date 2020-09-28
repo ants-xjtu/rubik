@@ -22,6 +22,7 @@ make A=weaver_whitebox.template.c
 # generally it's recommend to edit the copy of the template
 cp weaver_whitebox.template.c weaver_whitebox.c
 # and build it with custom code
+make
 # DPDK target
 make T=dpdk
 ```
@@ -35,4 +36,4 @@ Rubik is a perfect tool for:
 * validating the functionality of newly-designed protocols
 * modeling network protocols/stacks with a comprehensive abstraction
 
-To learn more, please head on to [a tour of Rubik][./doc/00-a-tour-of-rubik.markdown] and enjoy hacking!
+To learn more, please head on to [a tour of Rubik](./doc/00-a-tour-of-rubik.markdown) and enjoy hacking!
