@@ -1,3 +1,6 @@
+> Author: Sun Guangda
+> Date: 2020.9.29
+
 This is the catch-up document for layout declaration and header stage. You have learned the basic usage of them in [the tour](doc/00-a-tour-of-rubik.markdown).
 
 #### Variable-length field
