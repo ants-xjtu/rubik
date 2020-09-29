@@ -1,4 +1,4 @@
-> Author: Sun Guangda
+> Author: Sun Guangda \
 > Date: 2020.9.23
 
 In this article, I will go through the main concepts and features of Rubik. Some of them are overlapped to the content of the paper, but in a programmer's perspective rather than a designer.

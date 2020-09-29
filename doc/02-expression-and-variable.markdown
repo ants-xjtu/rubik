@@ -1,4 +1,4 @@
-> Author: Sun Guangda
+> Author: Sun Guangda \
 > Date: 2020.9.30
 
 This is the catch-up document for expressions and variables in Rubik. Expressions could appear in:
