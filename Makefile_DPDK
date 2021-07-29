@@ -1,0 +1,101 @@
+SHELL := /bin/bash
+
+
+A ?= weaver_whitebox.c
+C ?= stack_conf
+T ?= dpdk
+bb := weaver_blackbox.c
+wb := weaver_whitebox.template.c
+sep = Weaver Auto-generated Blackbox Code
+
+BUILD_DIR = ./build/
+APP = procpkts
+TARGET_FLAG = -DWV_TARGET_$(T)
+export TARGET_FLAG
+
+### GCC ###
+GCC = gcc
+GCC_OPT = -m64 # -Wall -DNEWEV -Werror
+
+GCC_OPT += -g -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+# GCC_OPT += -O3 -DNDEBUG -DNETSTAT -DINFO -DDBGERR -DDBGCERR
+GCC_OPT += $(DBG_OPT)
+
+### LIBRARIES AND INCLUDES ###
+INC_DIR = ./native
+INC= -I$(INC_DIR) -I$(INC_DIR)/runtime -I$(INC_DIR)/runtime/tommyds
+
+### SOURCE FILES ###
+
+# Build using pkg-config variables if possible
+ifneq ($(shell pkg-config --exists libdpdk && echo 0),0)
+$(error "no installation of DPDK found")
+endif
+
+LIB_FLAGS += -lstdc++ -lpcre2-8
+
+all: shared
+.PHONY: shared static
+shared: build/$(APP)-shared
+	ln -sf $(APP)-shared build/$(APP)
+static: build/$(APP)-static
+	ln -sf $(APP)-static build/$(APP)
+
+PKGCONF ?= pkg-config
+
+PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
+CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
+# Add flag to allow experimental API as l2fwd uses rte_ethdev_set_ptype API
+CFLAGS += -DALLOW_EXPERIMENTAL_API
+LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
+LDFLAGS_STATIC = $(shell $(PKGCONF) --static --libs libdpdk)
+
+ifeq ($(MAKECMDGOALS),static)
+# check for broken pkg-config
+ifeq ($(shell echo $(LDFLAGS_STATIC) | grep 'whole-archive.*l:lib.*no-whole-archive'),)
+$(warning "pkg-config output list does not contain drivers between 'whole-archive'/'no-whole-archive' flags.")
+$(error "Cannot generate statically-linked binaries with this version of pkg-config")
+endif
+endif
+
+
+SRC_DIR = $(PWD)
+SRCS = $(bb) $(A) native/drivers/$(T).c $(SRC_DIR)/native/runtime/libwvrt.a
+DPDK_INC = -I$(SRC_DIR)/native/ -I$(SRC_DIR)/native/runtime -I$(SRC_DIR)/native/runtime/tommyds
+CFLAGS += $(DPDK_INC) $(GCC_OPT)
+# LDFLAGS += -lpcre2-8
+
+SRCS-y := $(SRCS)
+
+$(SRC_DIR)/native/runtime/libwvrt.a:
+	cd $(SRC_DIR)/native/runtime && $(MAKE) -C .
+
+
+gen:
+	# https://stackoverflow.com/a/7104422
+	python3 -m rubik $(C) | tee >(sed -e "/$(sep)/,\$$d" > $(wb)) | sed -n -e "/$(sep)/,\$$w $(bb)"
+
+test: test_seq
+	./test_seq
+
+test_seq: native/runtime/seq_test.c native/runtime/seq.h
+	$(GCC) -o test_seq native/runtime/seq_test.c
+
+build/$(APP)-shared: $(SRCS-y) Makefile_DPDK $(PC_FILE) | build
+	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED) $(TARGET_FLAG)
+
+build/$(APP)-static: $(SRCS-y) Makefile_DPDK $(PC_FILE) | build
+	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC) $(TARGET_FLAG)
+
+build:
+	@mkdir -p $@
+
+.PHONY: clean
+clean:
+	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
+	test -d build && rmdir -p build || true
+	-$(RM) procpkts $(wb) $(bb)
+	-$(RM) -rf build/
+	-$(RM) native/weaver.h.gch
+	-$(RM) test_seq
+	$(MAKE) -C native/runtime clean
