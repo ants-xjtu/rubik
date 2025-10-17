@@ -152,7 +152,7 @@ The next transition is for entering hand-waving phrase. Here comes an issue: the
 First let's make a rule: The hand-waving packets should set their `offset` field to the total length of payload. Then we could get help from our sequence: remember that we pass the offset field field as `meta` property to the sequence for every packet including the hand-waving ones, so the sequence will insert a zero-lengthed payload at the expected end of data buffer, and wait for the payload carried by the following packets to fulfill the "hole" before it. So that our problem becomes: we want to write the prediction of the transition as, "not only the hand-waving flag is shown in a parsed packet, but also there's no 'hole' in the reorder buffer so every received payload is sorted". Since this kind of predication is so common, Rubik provides a syntax sugar for it:
 
 ```python
-    sp.psm.wv1 = (ESTABLISHED >> WV1) + Pred(sp.v.header.flag_goodbye == 00 & sp.header.flag_hello == 11)
+    sp.psm.wv1 = (ESTABLISHED >> WV1_SENT) + Pred(sp.v.header.flag_goodbye == 00 & sp.header.flag_hello == 11)
 ```
 
 Notice the special `sp.v.header.flag_goodbye` syntax. It has the exactly same meaning descibed above. The rest transitons are similar to the handshaking ones so I will omit them for saving space.
@@ -179,7 +179,7 @@ First we need to declare a layout for the name of C function and the arguments w
 Notice you should not use `UInt` other than header layouts. Then create an event to call the function:
 
 ```python
-    sp.event.on_assemble = If(so.event.asm) >> (
+    sp.event.on_assemble = If(sp.event.asm) >> (
         Assign(on_assemble.assembled_length, sp.sdu.length) +
         Call(on_assemble)
     )
